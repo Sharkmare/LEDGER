@@ -441,7 +441,29 @@ function renderBoardPage() {
   return renderBoard(state.tickets, board.statuses);
 }
 
+let renderedViewKey = "";
+
+function viewKey() {
+  return [state.page, state.view, state.project, state.areaId, state.boardId, state.manageTab, state.kb.view, state.kb.spaceId, state.kb.pageId].join("|");
+}
+
+function captureScroll() {
+  const columns = {};
+  document.querySelectorAll("#main .column").forEach((column) => { columns[column.dataset.status] = column.querySelector(".cards").scrollTop; });
+  return { main: byId("main").scrollTop, nav: byId("navSections").scrollTop, columns };
+}
+
+function restoreScroll(saved) {
+  byId("main").scrollTop = saved.main;
+  byId("navSections").scrollTop = saved.nav;
+  document.querySelectorAll("#main .column").forEach((column) => {
+    if (saved.columns[column.dataset.status]) column.querySelector(".cards").scrollTop = saved.columns[column.dataset.status];
+  });
+}
+
 function render() {
+  const key = viewKey();
+  const saved = key === renderedViewKey ? captureScroll() : null;
   renderNav();
   renderHeader();
   updateProfileButton();
@@ -461,6 +483,8 @@ function render() {
   const truncated = state.total > state.tickets.length && state.page === "tickets";
   byId("summary").textContent = !listing ? "" : truncated ? `${state.tickets.length} of ${state.total} shown, narrow the filters` : `${state.tickets.length} shown, ${open} open`;
   byId("summary").classList.toggle("warn", truncated);
+  if (saved) restoreScroll(saved);
+  renderedViewKey = key;
 }
 
 function attachBoardEvents() {
