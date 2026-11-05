@@ -3,7 +3,7 @@
 const STATUS_LABELS = { backlog: "Backlog", todo: "To do", in_progress: "In progress", in_review: "In review", blocked: "Blocked", done: "Done", cancelled: "Cancelled" };
 const PRIORITY_MARKS = { lowest: "v", low: "-", medium: "=", high: "+", critical: "!", blocker: "!!" };
 const STORAGE = { actor: "ledger.actor", project: "ledger.project", view: "ledger.view", page: "ledger.page", theme: "ledger.theme", nav: "ledger.navCollapsed",
-  sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb" };
+  sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb", areas: "ledger.navAreas" };
 const DEFAULT_ACTOR = "me";
 const SEARCH_DEBOUNCE_MS = 200;
 const TOAST_MS = 2600;
@@ -46,7 +46,7 @@ Object.assign(ICONS, {
 const state = {
   meta: null, org: { name: "" }, projects: [], areas: [], boards: [], tagList: [], tickets: [], total: 0, stats: null,
   page: "tickets", project: "", nav: "all", view: "board", areaId: null, boardId: null, dashboards: [], dashboardId: null, dashboardData: null,
-  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [],
+  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [],
 };
 
 const byId = (id) => document.getElementById(id);
@@ -215,25 +215,36 @@ function openCount(project) {
 
 function sectionCollapsed(name) { return state.collapsedSections.includes(name); }
 
-function navItemHtml({ id, label, iconName, tile, count, active, href, kind, indent = 0 }) {
+function navItemHtml({ id, label, iconName, tile, count, active, href, kind, indent = 0, twisty }) {
   const lead = tile ? `<span class="tile" style="--tint:${nameColor(tile)}">${escapeHtml(tile.slice(0, 2))}</span>` : svg(iconName);
   const tag = href ? "a" : "button";
   return `<${tag} class="nav-item${active ? " active" : ""}" ${href ? `href="${href}"` : `type="button"`} data-kind="${kind}" data-id="${escapeHtml(id)}" style="padding-left:${8 + indent * 16}px"
-    ${active ? 'aria-current="page"' : ""}>${lead}<span class="label">${escapeHtml(label)}</span>${count === undefined ? "" : `<span class="count">${count}</span>`}</${tag}>`;
+    ${active ? 'aria-current="page"' : ""}>${twisty ? `<span class="twisty ${twisty}" data-twisty="${escapeHtml(id)}" role="button" aria-label="${twisty === "closed" ? "Expand" : "Collapse"} ${escapeHtml(label)}" aria-expanded="${twisty === "open"}"></span>` : kind === "area" ? '<span class="twisty none"></span>' : ""}${lead}<span class="label">${escapeHtml(label)}</span>${count === undefined ? "" : `<span class="count">${count}</span>`}</${tag}>`;
 }
 
 function navSections() {
   const filter = state.navFilter.toLowerCase();
   const matches = (label) => !filter || label.toLowerCase().includes(filter);
   const onTickets = state.page === "tickets";
-  const areaItems = state.areas.flatMap((area) => [
-    ...(matches(area.path) || state.boards.some((b) => b.area_id === area.id && matches(b.name)) ? [navItemHtml({ id: area.id, label: area.name, iconName: "folder", count: area.open_tickets, kind: "area", indent: area.depth, active: state.page === "area" && state.areaId === area.id })] : []),
-    ...state.boards.filter((b) => b.area_id === area.id && (matches(b.name) || matches(area.path))).map((b) => navItemHtml({ id: b.id, label: b.name, iconName: "board", count: b.tickets, kind: "board", indent: area.depth + 1, active: state.page === "board" && state.boardId === b.id })),
-  ]);
+  const areaItems = [];
+  let hiddenBelow = Infinity;
+  state.areas.forEach((area) => {
+    if (area.depth > hiddenBelow) return;
+    hiddenBelow = Infinity;
+    const areaBoards = state.boards.filter((b) => b.area_id === area.id);
+    const hasChildren = areaBoards.length > 0 || state.areas.some((other) => other.parent_id === area.id);
+    const folded = !filter && hasChildren && state.collapsedAreas.includes(area.id);
+    if (folded) hiddenBelow = area.depth;
+    const shownBoards = folded ? [] : areaBoards.filter((b) => matches(b.name) || matches(area.path));
+    if (matches(area.path) || areaBoards.some((b) => matches(b.name))) {
+      areaItems.push(navItemHtml({ id: area.id, label: area.name, iconName: "folder", count: area.open_tickets, kind: "area", indent: area.depth, twisty: hasChildren ? (folded ? "closed" : "open") : "", active: state.page === "area" && state.areaId === area.id }));
+    }
+    shownBoards.forEach((b) => areaItems.push(navItemHtml({ id: b.id, label: b.name, iconName: "board", count: b.tickets, kind: "board", indent: area.depth + 1, active: state.page === "board" && state.boardId === b.id })));
+  });
   return [
     { name: "Work", items: WORK_ITEMS.filter((i) => matches(i.label)).map((i) => navItemHtml({ id: i.id, label: i.label, iconName: i.icon, kind: "work", active: onTickets && !state.project && state.nav === i.id && ["board", "list"].includes(state.view) })) },
-    { name: state.org.name || "Organisation", key: "Organisation", items: [...areaItems, ...(matches("create area") ? [navItemHtml({ id: "create-area", label: "Create area", iconName: "plus", kind: "create-area" })] : [])] },
-    { name: "Projects", items: [
+    { name: state.org.name || "Organisation", key: "Organisation", total: state.areas.length, items: [...areaItems, ...(matches("create area") ? [navItemHtml({ id: "create-area", label: "Create area", iconName: "plus", kind: "create-area" })] : [])] },
+    { name: "Projects", total: state.projects.length, items: [
       ...state.projects.filter((p) => matches(p.key + " " + p.name)).map((p) => navItemHtml({ id: p.key, label: p.name, tile: p.key, count: openCount(p), kind: "project", active: onTickets && state.project === p.key && !["plan", "roadmap"].includes(state.view) })),
       ...(matches("create project") ? [navItemHtml({ id: "create-project", label: "Create project", iconName: "plus", kind: "create-project" })] : []),
     ] },
@@ -266,7 +277,7 @@ function renderNav() {
     const key = section.key || section.name;
     const collapsed = !filter && sectionCollapsed(key);
     return `<div class="nav-section${collapsed ? " collapsed" : ""}" data-section="${escapeHtml(key)}">
-      <button type="button" class="nav-heading" aria-expanded="${!collapsed}"><span>${escapeHtml(section.name)}</span><span class="chevron" aria-hidden="true">&#9662;</span></button>
+      <button type="button" class="nav-heading" aria-expanded="${!collapsed}"><span>${escapeHtml(section.name)}</span>${section.total === undefined ? "" : `<span class="section-count">${section.total}</span>`}<span class="chevron" aria-hidden="true"></span></button>
       <div class="nav-items">${section.items.join("")}</div></div>`;
   }).join("") : `<div class="nav-empty">Nothing matches</div>`;
   wireNav();
@@ -279,6 +290,13 @@ function wireNav() {
     const name = heading.parentElement.dataset.section;
     state.collapsedSections = sectionCollapsed(name) ? state.collapsedSections.filter((n) => n !== name) : [...state.collapsedSections, name];
     remember(STORAGE.sections, JSON.stringify(state.collapsedSections));
+    renderNav();
+  }));
+  byId("navSections").querySelectorAll(".twisty[data-twisty]").forEach((twisty) => twisty.addEventListener("click", (event) => {
+    event.stopPropagation();
+    const id = Number(twisty.dataset.twisty);
+    state.collapsedAreas = state.collapsedAreas.includes(id) ? state.collapsedAreas.filter((n) => n !== id) : [...state.collapsedAreas, id];
+    remember(STORAGE.areas, JSON.stringify(state.collapsedAreas));
     renderNav();
   }));
   const actions = {
@@ -755,6 +773,7 @@ async function start() {
   byId("actorInput").value = recall(STORAGE.actor, DEFAULT_ACTOR);
   if ((recall(STORAGE.nav, "") && !isNarrow()) || isNarrow()) document.body.classList.add("nav-collapsed");
   try { state.collapsedSections = JSON.parse(recall(STORAGE.sections, "[]")); } catch (_) { state.collapsedSections = []; }
+  try { state.collapsedAreas = JSON.parse(recall(STORAGE.areas, "[]")); } catch (_) { state.collapsedAreas = []; }
   state.meta = await api("GET", "/api/meta");
   fillSelect(byId("filterType"), state.meta.types, (v) => v, "Any");
   fillSelect(byId("filterPriority"), state.meta.priorities, (v) => v, "Any");
