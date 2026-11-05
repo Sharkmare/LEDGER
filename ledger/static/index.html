@@ -1,0 +1,147 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>LEDGER</title>
+<link rel="stylesheet" href="/fonts/fonts.css" onerror="this.remove()">
+<link rel="stylesheet" href="/static/ledger.css">
+<link rel="stylesheet" href="/static/controls.css">
+<link rel="stylesheet" href="/static/pages.css">
+<link rel="stylesheet" href="/static/kb.css">
+</head>
+<body>
+<header class="topbar">
+  <button id="navToggle" class="icon-button" aria-label="Toggle navigation" title="Navigation"><span data-icon="menu"></span></button>
+  <a class="brand" href="/"><span class="logo">L</span><span class="wordmark">LEDGER</span></a>
+  <div class="search">
+    <span class="search-icon" data-icon="search"></span>
+    <input id="searchBox" type="search" placeholder="Search tickets" aria-label="Search tickets" autocomplete="off">
+    <kbd>/</kbd>
+  </div>
+  <div class="top-actions">
+    <button id="newButton" class="primary">Create</button>
+    <button id="refreshButton" class="icon-button" aria-label="Refresh" title="Refresh  ( r )"><span data-icon="refresh"></span></button>
+    <button id="helpButton" class="icon-button" aria-label="Keyboard shortcuts" title="Keyboard shortcuts  ( ? )"><span data-icon="help"></span></button>
+    <button id="themeButton" class="icon-button" aria-label="Switch theme" title="Switch theme"><span data-icon="theme"></span></button>
+    <div class="profile">
+      <button id="profileButton" class="avatar-button" aria-label="Profile" aria-haspopup="true" aria-expanded="false"></button>
+      <div id="profileMenu" class="menu" hidden>
+        <label for="actorInput">Your name</label>
+        <input id="actorInput" autocomplete="off" aria-label="Name recorded in ticket history">
+        <p class="menu-note">Recorded in the history of everything you change.</p>
+      </div>
+    </div>
+  </div>
+</header>
+
+<div class="shell">
+  <nav id="sidebar" class="sidebar" aria-label="Navigator">
+    <div class="nav-filter"><input id="navFilter" type="search" placeholder="Filter navigator" aria-label="Filter navigator" autocomplete="off"></div>
+    <div id="navSections" class="nav-sections"></div>
+  </nav>
+  <div id="scrim" class="scrim" hidden></div>
+
+  <section class="content">
+    <div class="page-header">
+      <div id="breadcrumb" class="breadcrumb"></div>
+      <div class="title-row">
+        <h1 id="pageTitle">All work</h1>
+        <div id="pageActions" class="page-actions"></div>
+      </div>
+      <div id="tabs" class="tabs" role="tablist" aria-label="View"></div>
+    </div>
+
+    <div class="filters" id="filters">
+      <label>Assignee <select id="filterAssignee"><option value="">Anyone</option></select></label>
+      <label>Type <select id="filterType"><option value="">Any</option></select></label>
+      <label>Priority <select id="filterPriority"><option value="">Any</option></select></label>
+      <label>Tag <select id="filterLabel"><option value="">Any</option></select></label>
+      <label class="check"><input id="filterOpen" type="checkbox"> Hide done</label>
+      <button id="clearFilters" class="ghost">Clear</button>
+      <span id="summary" class="summary" aria-live="polite"></span>
+    </div>
+
+    <main id="main"></main>
+  </section>
+</div>
+
+<aside id="drawer" class="drawer" aria-label="Ticket" hidden></aside>
+
+<dialog id="newDialog" aria-labelledby="newHeading" class="wide">
+  <form method="dialog" id="newForm">
+    <h2 id="newHeading">Create ticket</h2>
+    <div class="row">
+      <label>Project <select name="project" id="newProject" required></select></label>
+      <label>Template <select name="template" id="newTemplate"></select></label>
+    </div>
+    <label>Title <input name="title" id="newTitle" required maxlength="200" autocomplete="off"></label>
+    <label>Description <textarea name="body" id="newBody" rows="4"></textarea></label>
+    <div class="row">
+      <label>Type <select name="type" id="newType"></select></label>
+      <label>Priority <select name="priority" id="newPriority"></select></label>
+      <label>Status <select name="status" id="newStatus"></select></label>
+    </div>
+    <div class="row">
+      <label>Assignee <input name="assignee" id="newAssignee" autocomplete="off"></label>
+      <label>Tags <input name="labels" id="newLabels" placeholder="comma separated" autocomplete="off"></label>
+    </div>
+    <div class="row">
+      <label>Area <select name="area" id="newArea"></select></label>
+      <label>Iteration <select name="iteration" id="newIteration"></select></label>
+      <label>Parent <input name="parent" id="newParent" placeholder="APP-1" autocomplete="off"></label>
+    </div>
+    <div class="row">
+      <label>Estimate <input name="estimate" id="newEstimate" type="number" min="0" step="0.5" placeholder="points"></label>
+      <label>Start <input name="start" id="newStart" placeholder="YYYY-MM-DD" autocomplete="off"></label>
+      <label>Due <input name="due" id="newDue" placeholder="YYYY-MM-DD" autocomplete="off"></label>
+    </div>
+    <div class="actions">
+      <button type="button" class="ghost" id="newCancel">Cancel</button>
+      <button type="submit" class="primary">Create <kbd>Ctrl+Enter</kbd></button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="formDialog" aria-labelledby="formHeading">
+  <form method="dialog" id="formForm">
+    <h2 id="formHeading"></h2>
+    <p id="formIntro" class="hint" hidden></p>
+    <div id="formFields"></div>
+    <div id="formExtra"></div>
+    <div class="actions" id="formActions">
+      <button type="button" class="ghost" id="formCancel">Cancel</button>
+      <button type="submit" class="primary" id="formSubmit">Save</button>
+    </div>
+  </form>
+</dialog>
+
+<dialog id="helpDialog" aria-labelledby="helpHeading">
+  <h2 id="helpHeading">Keyboard shortcuts</h2>
+  <table class="shortcuts">
+    <tr><td><kbd>c</kbd></td><td>Create ticket</td></tr>
+    <tr><td><kbd>/</kbd></td><td>Search</td></tr>
+    <tr><td><kbd>s</kbd> <kbd>b</kbd> <kbd>l</kbd></td><td>Summary, board or list view</td></tr>
+    <tr><td><kbd>n</kbd></td><td>Show or hide the navigator</td></tr>
+    <tr><td><kbd>r</kbd></td><td>Refresh</td></tr>
+    <tr><td><kbd>Enter</kbd></td><td>Open the focused ticket</td></tr>
+    <tr><td><kbd>Esc</kbd></td><td>Close the ticket drawer or a menu</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>Enter</kbd></td><td>Submit a form or comment</td></tr>
+    <tr><td><kbd>Ctrl</kbd>+<kbd>K</kbd></td><td>Find anything, or jump anywhere</td></tr>
+    <tr><td><kbd>e</kbd></td><td>Edit the knowledge page you are reading</td></tr>
+    <tr><td><kbd>?</kbd></td><td>This help</td></tr>
+  </table>
+  <p class="hint">Drag a card to another column to change its status, or drag a ticket in Plan to move it between iterations.</p>
+  <div class="actions"><button type="button" class="primary" id="helpClose">Close</button></div>
+</dialog>
+
+<div id="toast" class="toast" role="status" hidden></div>
+<script src="/static/dashboards.js"></script>
+<script src="/static/planning.js"></script>
+<script src="/static/manage.js"></script>
+<script src="/static/markdown.js"></script>
+<script src="/static/openapi-view.js"></script>
+<script src="/static/kb.js"></script>
+<script src="/static/ledger.js"></script>
+</body>
+</html>
