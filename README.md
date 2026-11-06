@@ -49,7 +49,7 @@ Pages live in spaces. A space holds a tree of pages you can reorder by dragging,
 - **Large spaces**: the tree loads one folder at a time, starts folded, and pages a long folder 200 at a time (`GET /api/kb/spaces/ID/children`). A page returns its first 100 sub-pages with the total, and its previous and next page directly. Lookups by title, parent and translation are indexed, so a category page with thousands of links opens in milliseconds. The Sub-page picker in the editor searches instead of listing every page.
 - **History**: every save is a version with an author and an optional note; compare any version with the one before and restore it.
 - **Trust**: verify a page to say it is still right and set when it should be looked at again. Pages past their review date are flagged and listed.
-- **Find**: Ctrl K searches pages, tools and tickets at once, ranked, with matches highlighted, and jumps to any area, board, dashboard or setting.
+- **Find**: Ctrl K searches pages, tools and tickets at once, ranked, with matches highlighted, and jumps to any area, board, dashboard or setting. On knowledge base pages the search box in the top bar searches the knowledge base, in the space you are reading by default with one click to search every space; clearing the box returns you to where you were.
 
 ### Tools
 

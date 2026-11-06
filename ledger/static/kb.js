@@ -5,6 +5,7 @@ const KB_DRAFT_PREFIX = "ledger.kbDraft.";
 const KB_EXPANDED_STORAGE = "ledger.kbExpanded";
 const KB_LEVEL_SIZE = 200;
 const KB_START_HERE_LIMIT = 30;
+const KB_SEARCH_LIMIT = 50;
 const KB_RECENT_LIMIT = 8;
 const KB_AUTOSAVE_MS = 2000;
 const KB_PREVIEW_DELAY_MS = 120;
@@ -116,6 +117,7 @@ function shelf(title, pages, empty) {
 }
 
 async function loadKb() {
+  if (state.kb.view === "search" && !state.kb.query) state.kb.view = "home";
   const view = state.kb.view;
   const data = {};
   const overview = await guarded(() => api("GET", "/api/kb/overview"));
@@ -141,6 +143,12 @@ async function loadKb() {
       if (state.kb.history) data.versions = (await guarded(() => api("GET", `/api/kb/pages/${data.page.id}/versions`))) || [];
     }
   }
+  if (view === "search") {
+    const parameters = new URLSearchParams({ q: state.kb.query, limit: String(KB_SEARCH_LIMIT) });
+    if (state.kb.searchSpaceId && !state.kb.searchAll) parameters.set("space", state.kb.searchSpaceId);
+    data.hits = (await guarded(() => api("GET", "/api/kb/search?" + parameters))) || [];
+    data.space = data.spaceMap[state.kb.searchSpaceId] || null;
+  }
   if (view === "tools") {
     const parameters = new URLSearchParams();
     for (const [name, value] of Object.entries({ kind: state.kb.toolKind, location: state.kb.toolLocation, q: state.kb.toolQuery })) if (value) parameters.set(name, value);
@@ -152,6 +160,7 @@ async function loadKb() {
 function kbHeader() {
   const data = state.pageData || {};
   const view = state.kb.view;
+  if (view === "search") return { title: "Search", crumb: crumbLink("Knowledge base", { page: "kb", kb: { ...state.kb, view: "home", query: "", back: null } }), actions: "", wire: null, tabs: [] };
   if (view === "tools") {
     return { title: "Tools", crumb: "Knowledge base", actions: `<button id="kbAddTool" class="primary">Add tool</button>`, wire: () => byId("kbAddTool").addEventListener("click", () => toolForm(null)), tabs: [] };
   }
@@ -173,6 +182,7 @@ function kbHeader() {
 
 function renderKb() {
   const view = state.kb.view;
+  if (view === "search") return renderKbSearch();
   if (view === "tools") return renderTools();
   if (view === "page" && state.pageData.page) {
     if (state.kb.editing) return renderEditor();
@@ -193,6 +203,27 @@ function wireKbLinks(root) {
   root.querySelectorAll("a[data-ticket]").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); openTicket(link.dataset.ticket); }));
   root.querySelectorAll("[data-copy-code]").forEach((button) => button.addEventListener("click", () => copyText(button.parentElement.querySelector("code").textContent, "Code copied")));
   root.querySelectorAll("a[data-anchor]").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); const target = document.getElementById(link.dataset.anchor); if (target) target.scrollIntoView({ behavior: "smooth" }); }));
+}
+
+function renderKbSearch() {
+  const { hits, space } = state.pageData;
+  const scoped = space && !state.kb.searchAll;
+  byId("main").innerHTML = `<div class="kb-doc kb-search-results"><h1>Results for \u201C${escapeHtml(state.kb.query)}\u201D${scoped ? ` in ${escapeHtml(space.name)}` : ""}</h1>
+    ${space ? `<p><button type="button" class="ghost small" id="kbSearchScope">${scoped ? "Search all spaces" : `Search only ${escapeHtml(space.name)}`}</button></p>` : ""}
+    ${hits.length ? `<div class="kb-hits">${hits.map(hitRowHtml).join("")}</div>` : `<p class="muted">Nothing matches. Try fewer or shorter words.</p>`}</div>`;
+  wireKbLinks(byId("main"));
+  const scope = byId("kbSearchScope");
+  if (scope) scope.addEventListener("click", () => kbGo({ searchAll: !state.kb.searchAll }));
+}
+
+function hitRowHtml(hit) {
+  return `<div class="kb-hit" tabindex="0" role="link" data-kb-open="${hit.id}"><span class="title">${escapeHtml(hit.title)}</span><span class="muted">${escapeHtml(hit.space ? hit.space.name : "")}</span>
+    <span class="snippet">${snippetHtml(hit.snippet)}</span></div>`;
+}
+
+function kbSearchFromBox(text) {
+  const next = kbSearchTransition(state.kb, text);
+  if (next) kbGo(next);
 }
 
 function renderKbHome() {

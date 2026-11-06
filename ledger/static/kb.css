@@ -58,6 +58,12 @@ mark { background: color-mix(in srgb, var(--accent) 30%, transparent); color: in
 .kb-doc h1 { font-family: var(--font-display); font-size: 30px; margin: 0 0 8px; }
 .kb-node .node-count { color: var(--muted); font-size: 12px; margin-left: 6px; }
 .kb-more { margin: 4px 0 4px 18px; }
+.kb-hits { display: flex; flex-direction: column; gap: 6px; }
+.kb-hit { display: grid; grid-template-columns: 1fr auto; gap: 2px 12px; padding: 8px 12px; border: 1px solid var(--line); border-radius: var(--radius); cursor: pointer; }
+.kb-hit:hover, .kb-hit:focus-visible { background: var(--panel); }
+.kb-hit .title { font-weight: 600; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.kb-hit .snippet { grid-column: 1 / -1; color: var(--muted); font-size: 13px; }
+.kb-hit mark { background: transparent; color: var(--text); font-weight: 600; text-decoration: underline; }
 .kb-languages { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 10px; }
 .kb-languages .chip.current { background: var(--panel); color: var(--text); font-weight: 600; }
 .kb-meta { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; margin-bottom: 12px; font-size: 13px; }

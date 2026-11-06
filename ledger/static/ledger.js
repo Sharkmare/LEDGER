@@ -182,6 +182,7 @@ async function refresh({ redrawDrawer = true } = {}) {
 }
 
 function go(changes = {}) {
+  if (("page" in changes ? changes.page === "kb" : state.page === "kb") !== (state.page === "kb")) byId("searchBox").value = "";
   Object.assign(state, changes);
   remember(STORAGE.project, state.project);
   remember(STORAGE.view, state.view);
@@ -590,6 +591,9 @@ function render() {
   const saved = key === renderedViewKey ? captureScroll() : null;
   renderNav();
   renderHeader();
+  const searchLabel = state.page === "kb" ? "Search knowledge base" : "Search tickets";
+  byId("searchBox").placeholder = searchLabel;
+  byId("searchBox").setAttribute("aria-label", searchLabel);
   updateProfileButton();
   const noProjects = !state.projects.length;
   const needsProject = state.page === "tickets" && noProjects;
@@ -839,7 +843,7 @@ function setupControls() {
   document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeColumnMenu(); });
   byId("sortField").addEventListener("change", (event) => setSort(event.target.value ? { field: event.target.value, direction: defaultSortDirection(event.target.value) } : { field: "", direction: "asc" }));
   byId("sortDirection").addEventListener("click", () => setSort({ field: state.sort.field, direction: state.sort.direction === "asc" ? "desc" : "asc" }));
-  byId("searchBox").addEventListener("input", () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(() => { if (state.page !== "tickets") state.page = "tickets"; if (!["board", "list"].includes(state.view)) state.view = "list"; refresh(); }, SEARCH_DEBOUNCE_MS); });
+  byId("searchBox").addEventListener("input", () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(() => { if (state.page === "kb") { kbSearchFromBox(byId("searchBox").value.trim()); return; } if (state.page !== "tickets") state.page = "tickets"; if (!["board", "list"].includes(state.view)) state.view = "list"; refresh(); }, SEARCH_DEBOUNCE_MS); });
   byId("navFilter").addEventListener("input", (event) => { state.navFilter = event.target.value.trim(); renderNav(); });
   byId("newButton").addEventListener("click", () => openNewDialog());
   byId("refreshButton").addEventListener("click", () => refresh());
