@@ -32,7 +32,7 @@ function nameOfArea(areaId) {
 async function loadArea() {
   const area = await guarded(() => api("GET", `/api/areas/${state.areaId}`));
   if (!area) { state.areaId = null; state.page = "tickets"; return; }
-  const tickets = await guarded(() => request("GET", `/api/tickets?area=${state.areaId}&open=1&limit=30`));
+  const tickets = await guarded(() => request("GET", `/api/tickets?area=${state.areaId}&open=1&limit=30&exclude_type=${hiddenTypesParameter(state.hiddenTypes)}`));
   state.pageData = { area, tickets: tickets ? tickets.result : [], total: tickets ? tickets.total : 0 };
 }
 

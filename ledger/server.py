@@ -164,7 +164,7 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
             project_key=arguments.get("project"), status=arguments.get("status"), assignee=arguments.get("assignee"),
             type=arguments.get("type"), priority=arguments.get("priority"), label=arguments.get("label"),
             query=arguments.get("q"), source=arguments.get("source"), area=arguments.get("area"), iteration=arguments.get("iteration"),
-            include_closed=arguments.get("open") not in ("1", "true"), has_open_questions=arguments.get("questions") == "open")
+            include_closed=arguments.get("open") not in ("1", "true"), has_open_questions=arguments.get("questions") == "open", exclude_types=arguments.get("exclude_type"))
         response = jsonify(store.list_tickets(connection, limit=limit, **filters))
         response.headers[TOTAL_HEADER] = str(store.count_tickets(connection, **filters))
         return response

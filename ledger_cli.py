@@ -146,6 +146,7 @@ def add_ticket_commands(commands) -> None:
     list_command.add_argument("-q", "--q", "--text", dest="q", help="text in the title, description or key")
     list_command.add_argument("--open", action="store_true", help="hide done and cancelled")
     list_command.add_argument("--questions", action="store_true", help="only tickets with an unanswered question")
+    list_command.add_argument("--exclude-type", dest="exclude_type", help="comma separated ticket types to leave out, for example bug,chore")
     list_command.add_argument("--limit", type=int)
     commands.add_parser("mine", help="open tickets assigned to --as")
 
@@ -391,6 +392,7 @@ def list_path(arguments: argparse.Namespace) -> str:
         parameters["assignee"] = arguments.actor
     parameters["open"] = "1" if arguments.command == "mine" or getattr(arguments, "open", False) else None
     parameters["questions"] = "open" if getattr(arguments, "questions", False) else None
+    parameters["exclude_type"] = getattr(arguments, "exclude_type", None)
     return "/api/tickets?" + urllib.parse.urlencode({key: value for key, value in parameters.items() if value})
 
 

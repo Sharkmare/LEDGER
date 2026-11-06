@@ -185,6 +185,7 @@ def paths() -> dict:
                     query("iteration", "Iteration id"),
                     query("open", "Set to 1 to hide done and cancelled tickets", {"type": "string", "enum": ["1"]}),
                     query("questions", "Set to open to keep only tickets with an unanswered question", {"type": "string", "enum": ["open"]}),
+                    query("exclude_type", "Comma separated ticket types to leave out, for example bug,chore"),
                     query("limit", "Maximum tickets returned", {"type": "integer", "default": 500, "maximum": 5000})],
                 "responses": {"200": json_response("Matching tickets", {"type": "array", "items": ref("TicketSummary")}, total_header),
                               "400": ERRORS["400"], "404": ERRORS["404"]}},

@@ -30,7 +30,7 @@
   --status-in_review: #b58cff;
   --status-blocked: #ff6b6b;
   --status-done: #5fd38d;
-  --status-cancelled: #8a93a3;
+  --status-cancelled: #fd95dc;
   --priority-lowest: #8a93a3;
   --priority-low: #6fa8dc;
   --priority-medium: #ffc24c;
@@ -98,6 +98,10 @@ kbd { font-family: var(--font-mono); font-size: 11px; opacity: 0.75; border: 1px
 .menu label { display: block; color: var(--muted); margin-bottom: 4px; }
 .menu input { width: 100%; }
 .menu-note { color: var(--muted); font-size: 12px; margin: 8px 0 0; }
+.menu-group { border: 0; margin: 12px 0 0; padding: 0; }
+.menu-group legend { color: var(--muted); padding: 0; margin-bottom: 4px; }
+.menu-group label { display: flex; align-items: center; gap: 8px; color: var(--text); margin: 0; padding: 3px 0; cursor: pointer; }
+.menu-group input { width: auto; }
 
 .shell { flex: 1; display: flex; min-height: 0; }
 .sidebar { width: var(--nav-width); flex: none; background: var(--panel); border-right: 1px solid var(--line); display: flex; flex-direction: column; min-height: 0; }

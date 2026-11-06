@@ -3,7 +3,7 @@
 const STATUS_LABELS = { backlog: "Backlog", todo: "To do", in_progress: "In progress", in_review: "In review", blocked: "Blocked", done: "Done", cancelled: "Cancelled" };
 const PRIORITY_MARKS = { lowest: "v", low: "-", medium: "=", high: "+", critical: "!", blocker: "!!" };
 const STORAGE = { actor: "ledger.actor", project: "ledger.project", view: "ledger.view", page: "ledger.page", theme: "ledger.theme", nav: "ledger.navCollapsed",
-  sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb", areas: "ledger.navAreas", sort: "ledger.sort" };
+  hiddenTypes: "ledger.hiddenTypes", sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb", areas: "ledger.navAreas", sort: "ledger.sort" };
 const DEFAULT_ACTOR = "me";
 const SEARCH_DEBOUNCE_MS = 200;
 const TOAST_MS = 2600;
@@ -47,7 +47,7 @@ Object.assign(ICONS, {
 const state = {
   meta: null, org: { name: "" }, projects: [], areas: [], boards: [], tagList: [], tickets: [], total: 0, stats: null,
   page: "tickets", project: "", nav: "all", view: "board", areaId: null, boardId: null, dashboards: [], dashboardId: null, dashboardData: null,
-  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], sort: { field: "", direction: "asc" }, filters: emptyFilters(),
+  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], hiddenTypes: [], sort: { field: "", direction: "asc" }, filters: emptyFilters(),
 };
 
 const byId = (id) => document.getElementById(id);
@@ -152,6 +152,7 @@ function currentFilters() {
     assignee: state.nav === "mine" ? actorName() : state.filters.assignee,
     status: state.nav === "blocked" ? "blocked" : state.filters.status,
     questions: state.nav === "questions" ? "open" : "",
+    exclude_type: hiddenTypesParameter(state.hiddenTypes),
     type: state.filters.type, priority: state.filters.priority, label: state.filters.label,
     q: byId("searchBox").value.trim(), open: state.nav === "open" || state.filters.open ? "1" : "",
   };
@@ -227,6 +228,19 @@ function filterValues(fieldId) {
   return plain(names);
 }
 
+function setHiddenTypes(hidden) {
+  state.hiddenTypes = hidden;
+  remember(STORAGE.hiddenTypes, JSON.stringify(hidden));
+  renderTypeSettings();
+  refresh();
+}
+
+function renderTypeSettings() {
+  const container = byId("typeSettings");
+  container.innerHTML = state.meta.types.map((type) => `<label><input type="checkbox" data-hide-type="${escapeHtml(type)}"${state.hiddenTypes.includes(type) ? " checked" : ""}>${icon("type", type)}${escapeHtml(type)}</label>`).join("");
+  container.querySelectorAll("[data-hide-type]").forEach((box) => box.addEventListener("change", () => setHiddenTypes(toggledHiddenType(state.hiddenTypes, box.dataset.hideType, state.meta.types))));
+}
+
 function applyFilters(next) {
   state.filters = next;
   closeColumnMenu();
@@ -273,7 +287,9 @@ function renderFilterBar() {
       ...(state.filters.open ? [] : [`<button type="button" class="filter-chip" data-filter-toggle="1">Hide done</button>`])]
     : [];
   const clearAll = active.length > 1 ? [`<button type="button" class="ghost" data-filter-clear="all">Clear all</button>`] : [];
-  byId("filterChips").innerHTML = [...activeChips, ...offered, ...clearAll].join("");
+  const hiddenChip = state.hiddenTypes.length && ["tickets", "board", "area"].includes(state.page)
+    ? [`<span class="filter-chip active"><button type="button" class="chip-body" data-hidden-types-open="1">${escapeHtml(hiddenTypesLabel(state.hiddenTypes))}</button><button type="button" class="chip-clear" data-hidden-types-clear="1" aria-label="Show hidden ticket types">\u00D7</button></span>`] : [];
+  byId("filterChips").innerHTML = [...activeChips, ...hiddenChip, ...offered, ...clearAll].join("");
 }
 
 function openCount(project) {
@@ -489,7 +505,7 @@ function welcomeHtml() {
 }
 
 function orderedTickets(tickets) {
-  return sortTickets(tickets, state.sort, { statuses: state.meta.statuses, priorities: state.meta.priorities });
+  return sortTickets(visibleTickets(tickets, state.hiddenTypes), state.sort, { statuses: state.meta.statuses, priorities: state.meta.priorities });
 }
 
 function setSort(sort) {
@@ -878,7 +894,9 @@ function setupControls() {
   byId("filterChips").addEventListener("click", (event) => {
     const target = event.target.closest("button");
     if (!target) return;
-    if (target.dataset.filterOpen) openColumnMenu(target.dataset.filterOpen, target);
+    if (target.dataset.hiddenTypesOpen) byId("profileButton").click();
+    else if (target.dataset.hiddenTypesClear) setHiddenTypes([]);
+    else if (target.dataset.filterOpen) openColumnMenu(target.dataset.filterOpen, target);
     else if (target.dataset.filterToggle) applyFilters(toggledFilter(state.filters, "open"));
     else if (target.dataset.filterClear === "all") applyFilters(emptyFilters());
     else if (target.dataset.filterClear) applyFilters(clearedFilter(state.filters, target.dataset.filterClear));
@@ -940,6 +958,8 @@ async function start() {
     if (savedSort && SORT_FIELDS.some((field) => field.id === savedSort.field)) state.sort = { field: savedSort.field, direction: savedSort.direction === "desc" ? "desc" : "asc" };
   } catch (_) { state.sort = { field: "", direction: "asc" }; }
   state.meta = await api("GET", "/api/meta");
+  state.hiddenTypes = parseHiddenTypes(recall(STORAGE.hiddenTypes, "[]"), state.meta.types);
+  renderTypeSettings();
   fillSelect(byId("sortField"), SORT_FIELDS.map((field) => field.id), (id) => SORT_FIELDS.find((field) => field.id === id).label, "Default");
   fillSelect(byId("newType"), state.meta.types);
   fillSelect(byId("newPriority"), state.meta.priorities);

@@ -791,8 +791,17 @@ def _escape_like(text: str) -> str:
     return text.replace(LIKE_ESCAPE, LIKE_ESCAPE * 2).replace("%", LIKE_ESCAPE + "%").replace("_", LIKE_ESCAPE + "_")
 
 
+def _clean_excluded_types(value: Any) -> list[str]:
+    if value in (None, ""):
+        return []
+    names = value.split(",") if isinstance(value, str) else value
+    if not isinstance(names, (list, tuple)):
+        raise LedgerError("exclude_type is a comma separated list of ticket types")
+    return list(dict.fromkeys(_require_choice("exclude_type", name, TICKET_TYPES) for name in names if str(name).strip()))
+
+
 def _filter_clause(project_key, status, assignee, type, priority, label, query, include_closed, source=None, area=None,
-                   iteration=None, connection=None, has_open_questions=False) -> tuple[str, list]:
+                   iteration=None, connection=None, has_open_questions=False, exclude_types=None) -> tuple[str, list]:
     clauses, parameters = [], []
     if project_key:
         clauses.append("project_key = ?")
@@ -801,6 +810,10 @@ def _filter_clause(project_key, status, assignee, type, priority, label, query, 
         if value:
             clauses.append(f"{column} = ?")
             parameters.append(_require_choice(column, value, allowed))
+    excluded = _clean_excluded_types(exclude_types)
+    if excluded:
+        clauses.append(f"type NOT IN ({', '.join('?' for _ in excluded)})")
+        parameters.extend(excluded)
     if source:
         clauses.append("source = ?")
         parameters.append(source)
@@ -836,10 +849,11 @@ def _check_project_exists(connection: sqlite3.Connection, project_key: str | Non
 
 
 def count_tickets(connection: sqlite3.Connection, project_key=None, status=None, assignee=None, type=None, priority=None,
-                  label=None, query=None, include_closed=True, source=None, area=None, iteration=None, has_open_questions=False) -> int:
+                  label=None, query=None, include_closed=True, source=None, area=None, iteration=None, has_open_questions=False,
+                  exclude_types=None) -> int:
     _check_project_exists(connection, project_key)
     where, parameters = _filter_clause(project_key, status, assignee, type, priority, label, query, include_closed, source,
-                                       area, iteration, connection, has_open_questions)
+                                       area, iteration, connection, has_open_questions, exclude_types)
     return connection.execute(f"SELECT COUNT(*) FROM tickets {where}", parameters).fetchone()[0]
 
 
@@ -858,10 +872,11 @@ def list_tickets(
     area: Any = None,
     iteration: Any = None,
     has_open_questions: bool = False,
+    exclude_types: Any = None,
 ) -> list[dict]:
     _check_project_exists(connection, project_key)
     where, parameters = _filter_clause(project_key, status, assignee, type, priority, label, query, include_closed, source,
-                                       area, iteration, connection, has_open_questions)
+                                       area, iteration, connection, has_open_questions, exclude_types)
     priority_order = "CASE priority " + " ".join(f"WHEN '{name}' THEN {index + 1}" for index, name in enumerate(PRIORITIES)) + " END"
     rows = connection.execute(
         f"SELECT * FROM tickets {where} ORDER BY {priority_order} DESC, updated DESC LIMIT ?", (*parameters, limit)
