@@ -2,7 +2,6 @@
 
 const KB_RECENT_STORAGE = "ledger.kbRecent";
 const KB_DRAFT_PREFIX = "ledger.kbDraft.";
-const KB_EXPANDED_STORAGE = "ledger.kbExpanded";
 const KB_LEVEL_SIZE = 200;
 const KB_START_HERE_LIMIT = 30;
 const KB_SEARCH_LIMIT = 50;
@@ -36,31 +35,41 @@ function kbRemember(entry) {
 
 const kbTree = { spaceId: null, levels: {} };
 
-function kbExpanded() {
-  try { return JSON.parse(recall(KB_EXPANDED_STORAGE, "[]")); } catch (_) { return []; }
+function kbExpanded(spaceId) {
+  return kbParseExpanded(recall(kbExpandedKey(spaceId), "[]"));
 }
 
-function kbExpand(ids) {
-  const open = kbExpanded();
-  const next = [...new Set([...open, ...ids])];
-  if (next.length !== open.length) remember(KB_EXPANDED_STORAGE, JSON.stringify(next));
+function kbSaveExpanded(spaceId, ids) {
+  remember(kbExpandedKey(spaceId), JSON.stringify(ids));
+}
+
+function kbExpand(spaceId, ids) {
+  const open = kbExpanded(spaceId);
+  const next = kbWithExpanded(open, ids);
+  if (next.length !== open.length) kbSaveExpanded(spaceId, next);
 }
 
 function kbLevelUrl(spaceId, key, offset, limit) {
   return `/api/kb/spaces/${spaceId}/children?parent=${key === "root" ? "" : key}&offset=${offset}&limit=${limit}`;
 }
 
-async function loadKbLevel(spaceId, key) {
+async function loadKbLevel(spaceId, key, onError = (error) => toast(error.message, true)) {
   const loaded = kbTree.levels[key] ? kbTree.levels[key].items.length : 0;
-  const level = await guarded(() => api("GET", kbLevelUrl(spaceId, key, 0, Math.max(KB_LEVEL_SIZE, loaded))));
-  if (level) kbTree.levels[key] = level;
+  try {
+    kbTree.levels[key] = await api("GET", kbLevelUrl(spaceId, key, 0, Math.max(KB_LEVEL_SIZE, loaded)));
+    return true;
+  } catch (error) { onError(error); return false; }
+}
+
+async function loadExpandedKbLevel(spaceId, id) {
+  const loaded = await loadKbLevel(spaceId, String(id), () => {});
+  if (!loaded) kbSaveExpanded(spaceId, kbWithoutExpanded(kbExpanded(spaceId), id));
 }
 
 async function loadKbTree(spaceId, ancestorIds) {
   if (kbTree.spaceId !== spaceId) { kbTree.spaceId = spaceId; kbTree.levels = {}; }
-  kbExpand(ancestorIds);
-  const keys = [...new Set(["root", ...kbExpanded().map(String)])];
-  await Promise.all(keys.map((key) => loadKbLevel(spaceId, key)));
+  kbExpand(spaceId, ancestorIds);
+  await Promise.all([loadKbLevel(spaceId, "root"), ...kbExpanded(spaceId).map((id) => loadExpandedKbLevel(spaceId, id))]);
 }
 
 async function showMoreKbLevel(key) {
@@ -308,7 +317,7 @@ function renderKbLayout(renderContent) {
   const { space } = state.pageData;
   const previousBody = byId("kbTreeBody");
   const treeScroll = previousBody && previousBody.dataset.space === String(space.id) ? previousBody.scrollTop : 0;
-  const context = { activeId: state.kb.view === "page" ? state.kb.pageId : null, expanded: new Set(kbExpanded()) };
+  const context = { activeId: state.kb.view === "page" ? state.kb.pageId : null, expanded: new Set(kbExpanded(space.id)) };
   const rootLevel = kbTree.levels.root || { items: [], total: 0 };
   const spaces = state.pageData.overview.spaces.filter((s) => s.kind === "docs");
   byId("main").innerHTML = `<div class="kb-layout"><nav class="kb-tree" aria-label="Pages in ${escapeHtml(space.name)}">
@@ -329,9 +338,9 @@ function wireTree(container, space) {
   wireKbLinks(container);
   container.querySelectorAll("[data-twist]").forEach((button) => button.addEventListener("click", async () => {
     const id = Number(button.dataset.twist);
-    const open = kbExpanded();
-    const next = open.includes(id) ? open.filter((n) => n !== id) : [...open, id];
-    remember(KB_EXPANDED_STORAGE, JSON.stringify(next));
+    const open = kbExpanded(space.id);
+    const next = open.includes(id) ? kbWithoutExpanded(open, id) : [...open, id];
+    kbSaveExpanded(space.id, next);
     if (next.includes(id) && !kbTree.levels[String(id)]) await loadKbLevel(kbTree.spaceId, String(id));
     renderKb();
   }));
