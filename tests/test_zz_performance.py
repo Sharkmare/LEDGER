@@ -240,6 +240,7 @@ class PerformanceTests(unittest.TestCase):
 
     def test_tag_rename_and_page_diff(self):
         copy = Path(self.directory.name) / "rename.db"
+        self.connection.execute("PRAGMA wal_checkpoint(TRUNCATE)")
         shutil.copyfile(Path(self.directory.name) / "perf.db", copy)
         connection = store.connect(copy)
         self.addCleanup(connection.close)

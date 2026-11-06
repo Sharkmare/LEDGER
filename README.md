@@ -10,7 +10,7 @@ python -m ledger.server
 
 Python 3.10 or newer. Nothing to install. Ranked search uses SQLite's full-text engine when the build has it (standard builds do) and falls back to plain matching when not.
 
-Open http://127.0.0.1:6680/. The server listens on loopback only. Data lives in `data/ledger.db`, a single file you can copy to back up. A fresh database starts with an organisation name, five ticket templates and two dashboards.
+Open http://127.0.0.1:6680/. The server listens on loopback only. Data lives in `data/ledger.db`, a SQLite file in write-ahead mode. Stop the server and copy `ledger.db` to back up (while it runs, recent commits sit in `ledger.db-wal`, so copy that and `ledger.db-shm` too). A fresh database starts with an organisation name, five ticket templates and two dashboards.
 
 | Option | Flag | Environment variable |
 |---|---|---|

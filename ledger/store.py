@@ -256,6 +256,9 @@ def connect(database_path: str | Path) -> sqlite3.Connection:
     connection = sqlite3.connect(str(database_path), check_same_thread=False)
     connection.row_factory = sqlite3.Row
     connection.execute("PRAGMA foreign_keys = ON")
+    if str(database_path) != ":memory:":
+        connection.execute("PRAGMA journal_mode = WAL")
+        connection.execute("PRAGMA synchronous = NORMAL")
     connection.executescript(SCHEMA)
     _migrate(connection)
     connection.executescript(INDEX_SCRIPT)
