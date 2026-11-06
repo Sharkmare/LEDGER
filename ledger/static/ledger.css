@@ -115,8 +115,7 @@ body.nav-collapsed .sidebar { display: none; }
 .twisty.closed { transform: rotate(-90deg); }
 .twisty.none { visibility: hidden; cursor: default; }
 .twisty::before, .chevron::before { content: ""; width: 0; height: 0; border-left: 4px solid transparent; border-right: 4px solid transparent; border-top: 5px solid currentColor; }
-.chevron { display: inline-flex; align-items: center; }
-.chevron { transition: transform 0.12s; display: inline-block; font-size: 10px; }
+.chevron { flex: none; width: 8px; height: 8px; display: inline-flex; align-items: center; justify-content: center; transition: transform 0.12s; }
 .nav-section.collapsed .chevron { transform: rotate(-90deg); }
 .nav-section.collapsed .nav-items { display: none; }
 .nav-item { display: flex; align-items: center; gap: 10px; width: 100%; padding: 7px 8px; border: 0; border-radius: var(--radius); background: transparent; text-align: left; color: var(--text); text-decoration: none; }
