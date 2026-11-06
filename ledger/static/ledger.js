@@ -3,7 +3,7 @@
 const STATUS_LABELS = { backlog: "Backlog", todo: "To do", in_progress: "In progress", in_review: "In review", blocked: "Blocked", done: "Done", cancelled: "Cancelled" };
 const PRIORITY_MARKS = { lowest: "v", low: "-", medium: "=", high: "+", critical: "!", blocker: "!!" };
 const STORAGE = { actor: "ledger.actor", project: "ledger.project", view: "ledger.view", page: "ledger.page", theme: "ledger.theme", nav: "ledger.navCollapsed",
-  sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb", areas: "ledger.navAreas" };
+  sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb", areas: "ledger.navAreas", sort: "ledger.sort" };
 const DEFAULT_ACTOR = "me";
 const SEARCH_DEBOUNCE_MS = 200;
 const TOAST_MS = 2600;
@@ -46,7 +46,7 @@ Object.assign(ICONS, {
 const state = {
   meta: null, org: { name: "" }, projects: [], areas: [], boards: [], tagList: [], tickets: [], total: 0, stats: null,
   page: "tickets", project: "", nav: "all", view: "board", areaId: null, boardId: null, dashboards: [], dashboardId: null, dashboardData: null,
-  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [],
+  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], sort: { field: "", direction: "asc" },
 };
 
 const byId = (id) => document.getElementById(id);
@@ -398,6 +398,10 @@ function renderHeader() {
   }));
   const listing = ["tickets", "board"].includes(state.page) && ["board", "list"].includes(state.view);
   byId("filters").hidden = !(state.page === "tickets" && listing);
+  byId("sortField").value = state.sort.field;
+  const direction = byId("sortDirection");
+  direction.hidden = !state.sort.field;
+  direction.textContent = state.sort.direction === "asc" ? "▲ Ascending" : "▼ Descending";
 }
 
 function cardHtml(ticket) {
@@ -416,9 +420,25 @@ function welcomeHtml() {
     <button class="primary" id="emptyCreate">Create your first project</button></div>`;
 }
 
+function orderedTickets(tickets) {
+  return sortTickets(tickets, state.sort, { statuses: state.meta.statuses, priorities: state.meta.priorities });
+}
+
+function setSort(sort) {
+  state.sort = sort;
+  remember(STORAGE.sort, JSON.stringify(sort));
+  render();
+}
+
+function sortHeaderHtml(field) {
+  const active = state.sort.field === field.id;
+  const arrow = active ? (state.sort.direction === "asc" ? " ▲" : " ▼") : "";
+  return `<th aria-sort="${active ? (state.sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button type="button" class="sort-header" data-sort="${field.id}">${field.label}${arrow}</button></th>`;
+}
+
 function renderBoard(tickets = state.tickets, statuses = state.meta.statuses) {
   const columns = Object.fromEntries(statuses.map((s) => [s, []]));
-  tickets.forEach((t) => { if (columns[t.status]) columns[t.status].push(t); });
+  orderedTickets(tickets).forEach((t) => { if (columns[t.status]) columns[t.status].push(t); });
   byId("main").innerHTML = `<div class="board">${statuses.map((status) => `
     <section class="column" data-status="${status}" style="--status-color:${statusColor(status)}" aria-label="${STATUS_LABELS[status]}">
       <h3><span class="heading"><span class="dot" style="--tint:${statusColor(status)}"></span>${STATUS_LABELS[status]}</span><span class="count">${columns[status].length}</span></h3>
@@ -428,14 +448,15 @@ function renderBoard(tickets = state.tickets, statuses = state.meta.statuses) {
 
 function renderList(tickets = state.tickets) {
   if (!tickets.length) { byId("main").innerHTML = `<div class="empty"><p>No tickets match. Press c to create one.</p></div>`; return; }
-  byId("main").innerHTML = `<table class="list"><thead><tr><th>Key</th><th>Title</th><th>Status</th><th>Priority</th><th>Type</th><th>Assignee</th><th>Estimate</th><th>Updated</th></tr></thead><tbody>
-    ${tickets.map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)}</td>
+  byId("main").innerHTML = `<table class="list"><thead><tr>${SORT_FIELDS.map(sortHeaderHtml).join("")}</tr></thead><tbody>
+    ${orderedTickets(tickets).map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)}</td>
       <td><span class="pill" style="--pill-color:${statusColor(t.status)}">${STATUS_LABELS[t.status]}</span></td>
       <td><span class="pill" style="--pill-color:${priorityColor(t.priority)}">${icon("priority", t.priority)} ${PRIORITY_MARKS[t.priority]} ${t.priority}</span></td>
       <td>${icon("type", t.type)} ${t.type}</td><td>${escapeHtml(t.assignee)}</td><td>${t.estimate === null || t.estimate === undefined ? "" : formatNumber(t.estimate)}</td>
       <td>${new Date(t.updated * 1000).toLocaleDateString()}</td></tr>`).join("")}
     </tbody></table>`;
   byId("main").querySelectorAll("tr[data-key]").forEach((row) => activateOnKey(row, () => openTicket(row.dataset.key)));
+  byId("main").querySelectorAll(".sort-header").forEach((button) => button.addEventListener("click", () => setSort(nextSort(state.sort, button.dataset.sort))));
 }
 
 function barCard(title, counts, colorOf, labelOf = (v) => v) {
@@ -746,6 +767,8 @@ function isTyping() { return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeEle
 
 function setupControls() {
   ["filterAssignee", "filterType", "filterPriority", "filterLabel", "filterOpen"].forEach((id) => byId(id).addEventListener("change", refresh));
+  byId("sortField").addEventListener("change", (event) => setSort(event.target.value ? { field: event.target.value, direction: defaultSortDirection(event.target.value) } : { field: "", direction: "asc" }));
+  byId("sortDirection").addEventListener("click", () => setSort({ field: state.sort.field, direction: state.sort.direction === "asc" ? "desc" : "asc" }));
   byId("searchBox").addEventListener("input", () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(() => { if (state.page !== "tickets") state.page = "tickets"; if (!["board", "list"].includes(state.view)) state.view = "list"; refresh(); }, SEARCH_DEBOUNCE_MS); });
   byId("navFilter").addEventListener("input", (event) => { state.navFilter = event.target.value.trim(); renderNav(); });
   byId("clearFilters").addEventListener("click", () => {
@@ -798,9 +821,14 @@ async function start() {
   if ((recall(STORAGE.nav, "") && !isNarrow()) || isNarrow()) document.body.classList.add("nav-collapsed");
   try { state.collapsedSections = JSON.parse(recall(STORAGE.sections, "[]")); } catch (_) { state.collapsedSections = []; }
   try { state.collapsedAreas = JSON.parse(recall(STORAGE.areas, "[]")); } catch (_) { state.collapsedAreas = []; }
+  try {
+    const savedSort = JSON.parse(recall(STORAGE.sort, "null"));
+    if (savedSort && SORT_FIELDS.some((field) => field.id === savedSort.field)) state.sort = { field: savedSort.field, direction: savedSort.direction === "desc" ? "desc" : "asc" };
+  } catch (_) { state.sort = { field: "", direction: "asc" }; }
   state.meta = await api("GET", "/api/meta");
   fillSelect(byId("filterType"), state.meta.types, (v) => v, "Any");
   fillSelect(byId("filterPriority"), state.meta.priorities, (v) => v, "Any");
+  fillSelect(byId("sortField"), SORT_FIELDS.map((field) => field.id), (id) => SORT_FIELDS.find((field) => field.id === id).label, "Default");
   fillSelect(byId("newType"), state.meta.types);
   fillSelect(byId("newPriority"), state.meta.priorities);
   fillSelect(byId("newStatus"), state.meta.statuses, (v) => STATUS_LABELS[v]);

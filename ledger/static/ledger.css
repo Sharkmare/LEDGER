@@ -183,6 +183,9 @@ main { flex: 1; overflow: auto; padding: 4px 20px 16px; min-height: 0; }
 table.list { width: 100%; border-collapse: collapse; }
 table.list th { text-align: left; color: var(--muted); font-weight: 500; padding: 6px 10px; border-bottom: 1px solid var(--line); position: sticky; top: 0; background: var(--bg); }
 table.list td { padding: 7px 10px; border-bottom: 1px solid var(--line); }
+table.list .sort-header { all: unset; cursor: pointer; font: inherit; color: inherit; white-space: nowrap; }
+table.list .sort-header:hover, table.list .sort-header:focus-visible { color: var(--text); text-decoration: underline; }
+table.list th[aria-sort="ascending"] .sort-header, table.list th[aria-sort="descending"] .sort-header { color: var(--text); }
 table.list td.key, table.list .pill { white-space: nowrap; }
 table.list tr { cursor: pointer; }
 table.list tr:hover td, table.list tr:focus-visible td { background: var(--panel); }
