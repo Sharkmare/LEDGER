@@ -53,14 +53,18 @@
     </div>
 
     <div class="filters" id="filters">
+      <span class="filter-controls">
       <label>Assignee <select id="filterAssignee"><option value="">Anyone</option></select></label>
       <label>Type <select id="filterType"><option value="">Any</option></select></label>
       <label>Priority <select id="filterPriority"><option value="">Any</option></select></label>
       <label>Tag <select id="filterLabel"><option value="">Any</option></select></label>
+      </span>
       <label>Sort <select id="sortField"><option value="">Default</option></select></label>
       <button id="sortDirection" class="ghost" type="button" title="Reverse the sort" hidden></button>
+      <span class="filter-controls">
       <label class="check"><input id="filterOpen" type="checkbox"> Hide done</label>
       <button id="clearFilters" class="ghost">Clear</button>
+      </span>
       <span id="summary" class="summary" aria-live="polite"></span>
     </div>
 

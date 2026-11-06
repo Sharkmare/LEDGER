@@ -146,6 +146,8 @@ body.nav-collapsed .sidebar { display: none; }
 
 .filters { display: flex; align-items: center; gap: 14px; padding: 10px 20px; flex-wrap: wrap; }
 .filters[hidden] { display: none; }
+.filter-controls { display: contents; }
+.filter-controls[hidden] { display: none; }
 .filters label { color: var(--muted); display: flex; align-items: center; gap: 6px; }
 .filters label.check { gap: 4px; }
 .summary { margin-left: auto; color: var(--muted); font-family: var(--font-mono); font-size: 12px; }

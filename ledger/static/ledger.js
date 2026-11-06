@@ -397,7 +397,8 @@ function renderHeader() {
     else go({ view: tab.dataset.view });
   }));
   const listing = ["tickets", "board"].includes(state.page) && ["board", "list"].includes(state.view);
-  byId("filters").hidden = !(state.page === "tickets" && listing);
+  byId("filters").hidden = !listing;
+  document.querySelectorAll(".filter-controls").forEach((group) => { group.hidden = state.page !== "tickets"; });
   byId("sortField").value = state.sort.field;
   const direction = byId("sortDirection");
   direction.hidden = !state.sort.field;
