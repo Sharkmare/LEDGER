@@ -102,11 +102,13 @@ def print_tree(node: dict, depth: int = 0) -> None:
 
 
 def add_ticket_commands(commands) -> None:
-    commands.add_parser("projects", help="list projects with ticket counts")
+    list_projects = commands.add_parser("projects", help="list projects with ticket counts")
+    list_projects.add_argument("--tag", help="only projects carrying this project tag")
     new_project = commands.add_parser("new-project", help="create a project")
     new_project.add_argument("key")
     new_project.add_argument("name")
     new_project.add_argument("--description", default="")
+    new_project.add_argument("--tags", default="", help="comma separated project tags, for example resonite-research")
 
     add = commands.add_parser("add", help="create a ticket")
     add.add_argument("project", help="project key")
@@ -178,7 +180,7 @@ def add_planning_commands(commands) -> None:
     roadmap.add_argument("--project")
     project_set = commands.add_parser("project-set", help="change a project")
     project_set.add_argument("key")
-    for name in ("name", "description", "lead", "status", "start", "target"):
+    for name in ("name", "description", "lead", "status", "start", "target", "tags"):
         project_set.add_argument(f"--{name}")
 
     area = commands.add_parser("area", help="areas group boards").add_subparsers(dest="action", required=True)
@@ -376,9 +378,10 @@ def edit_changes(arguments: argparse.Namespace, existing_labels: list[str]) -> d
 def run_ticket_command(arguments: argparse.Namespace):
     base, actor, command = arguments.base, arguments.actor, arguments.command
     if command == "projects":
-        return call(base, "GET", "/api/projects", actor)
+        return call(base, "GET", "/api/projects" + (f"?tag={arguments.tag}" if arguments.tag else ""), actor)
     if command == "new-project":
-        return call(base, "POST", "/api/projects", actor, {"key": arguments.key, "name": arguments.name, "description": arguments.description})
+        return call(base, "POST", "/api/projects", actor,
+                    {"key": arguments.key, "name": arguments.name, "description": arguments.description, "tags": arguments.tags})
     if command == "add":
         fields = ("project", "title", "body", "type", "status", "priority", "assignee", "labels", "parent", "due", "start", "estimate", "area",
                   "iteration", "template", "source")
@@ -718,7 +721,7 @@ def run_planning_command(arguments: argparse.Namespace):
     if command == "roadmap":
         return call(base, "GET", "/api/roadmap" + (f"?project={arguments.project}" if arguments.project else ""), actor)
     if command == "project-set":
-        changes = drop_empty({name: getattr(arguments, name) for name in ("name", "description", "lead", "status", "start", "target")})
+        changes = drop_empty({name: getattr(arguments, name) for name in ("name", "description", "lead", "status", "start", "target", "tags")})
         if not changes:
             raise SystemExit("ledger: project-set needs at least one field, for example --lead ann")
         return call(base, "PATCH", f"/api/projects/{arguments.key}", actor, changes)
@@ -829,7 +832,8 @@ def render_ticket_command(command: str, result) -> None:
     elif command == "projects":
         for project in result:
             counts = ", ".join(f"{name} {count}" for name, count in project["counts"].items()) or "empty"
-            print(f"{project['key']:<6} {project['name']}  [{project['status']}]  ({counts})")
+            tags = f"  #{' #'.join(project['tags'])}" if project.get("tags") else ""
+            print(f"{project['key']:<6} {project['name']}  [{project['status']}]  ({counts}){tags}")
     elif command == "columns":
         for status in result["statuses"]:
             items = result["columns"][status]

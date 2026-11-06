@@ -66,10 +66,12 @@ def schemas() -> dict:
             "key": {"type": "string", "example": "APP"}, "name": {"type": "string", "example": "My app"},
             "description": {"type": "string"}, "created": {"type": "number"},
             "next_number": {"type": "integer"},
+            "tags": {"type": "array", "items": {"type": "string"}, "description": "Project tags that group the project in the navigator"},
             "counts": {"type": "object", "additionalProperties": {"type": "integer"}, "description": "Tickets per status"}}},
         "NewProject": {"type": "object", "required": ["key", "name"], "properties": {
             "key": {"type": "string", "pattern": "^[A-Z][A-Z0-9]{1,9}$", "example": "APP"},
-            "name": {"type": "string", "example": "My app"}, "description": {"type": "string"}}},
+            "name": {"type": "string", "example": "My app"}, "description": {"type": "string"},
+            "tags": {"type": "string", "description": "Comma separated project tags", "example": "games,tools"}}},
         "Ticket": {"type": "object", "properties": {**ticket_properties,
             "comments": {"type": "array", "items": ref("Comment")},
             "children": {"type": "array", "items": {"type": "object", "properties": {
@@ -144,6 +146,7 @@ def paths() -> dict:
             "responses": {"200": json_response("The vocabulary", ref("Meta"))}}},
         "/api/projects": {
             "get": {"tags": ["Projects"], "summary": "List projects with ticket counts per status", "operationId": "listProjects",
+                "parameters": [query("tag", "Only projects carrying this project tag")],
                 "responses": {"200": json_response("Projects ordered by key", {"type": "array", "items": ref("Project")})}},
             "post": {"tags": ["Projects"], "summary": "Create a project", "operationId": "createProject",
                 "requestBody": json_body(ref("NewProject")),
@@ -250,7 +253,7 @@ def organisation_paths() -> dict:
             "put": operation("Organisation", "Rename the organisation", "putOrganisation",
                              {"200": json_response("Organisation", ref("Organisation")), "400": ERRORS["400"]}, body=json_body(ref("Organisation")))},
         "/api/projects/{project_key}": {"patch": operation(
-            "Organisation", "Change a project: name, description, lead, status, start, target", "updateProject",
+            "Organisation", "Change a project: name, description, lead, status, start, target, tags", "updateProject",
             {"200": json_response("The updated project", ref("Project")), "400": ERRORS["400"], "404": ERRORS["404"]},
             [name_parameter("project_key", "Project key")], json_body({"type": "object"}))},
         "/api/boards/{board_id}/items": {"post": operation(

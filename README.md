@@ -31,6 +31,7 @@ Tickets             any type, with a parent and sub-tickets to any depth
 
 - **Tickets** have a title, description, type, status, priority, assignee, tags, parent, area, iteration, estimate, start and due date, links, comments and a history that records who changed what. Types: task, bug, feature, epic, story, spike, chore. Statuses: backlog, todo, in_progress, in_review, blocked, done, cancelled. An epic shows progress over everything under it.
 - **Areas** hold boards. A ticket can sit in one area.
+- **Project tags** group projects in the navigator, one foldable heading per tag (an item with several tags is listed under each). List projects with `projects --tag NAME`, and break dashboards down with the `project_tag` grouping. These are separate from ticket tags (labels).
 - **Boards** belong to an area. A board holds the tickets of its area and sub-areas that match its rules, plus pinned tickets. Rules: scope (this area, or any area), project, types, priorities, tags, assignee, "under this ticket", iteration. A board can show a chosen set of status columns.
 - **Iterations** have dates, a goal and a state (planned, active, done). The Plan view puts the backlog beside the iterations; drag a ticket onto one to plan it. The Roadmap lays iterations and dated epics on a timeline.
 - **Tags** are free text on tickets. Register one to give it a colour and description, rename it everywhere, merge two, or delete one.
@@ -65,7 +66,9 @@ Press `?` for the shortcuts: `c` create, `/` search, `s` `b` `l` for the views, 
 `ledger_cli.py` uses only the standard library. Add `--json` to any command for machine output. Set your name with `--as NAME` or `LEDGER_ACTOR`; it defaults to your system user name. Point at another server with `--base` or `LEDGER_URL`. `python ledger_cli.py --help` lists every command.
 
 ```bash
-python ledger_cli.py new-project APP "My app"
+python ledger_cli.py new-project APP "My app" --tags games
+python ledger_cli.py projects --tag games
+python ledger_cli.py project-set APP --tags games,tools
 python ledger_cli.py add APP "Login fails on empty password" --type bug --priority high --labels auth
 python ledger_cli.py add APP "Crash on start" --template 1 --area "Platform" --iteration "Sprint 1" --estimate 3
 python ledger_cli.py list --project APP --open

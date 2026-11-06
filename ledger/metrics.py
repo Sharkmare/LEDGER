@@ -12,7 +12,7 @@ from . import organise, store
 from .store import (CLOSED_STATUSES, PRIORITIES, STATUSES, TICKET_TYPES, LedgerError, NotFound, _area_path, _require_choice, _require_text)
 
 METRIC_KINDS = ("count", "group", "trend", "burndown", "cycle", "aging", "workload", "velocity", "overdue")
-GROUP_FIELDS = ("status", "type", "priority", "assignee", "label", "project", "area", "iteration")
+GROUP_FIELDS = ("status", "type", "priority", "assignee", "label", "project", "project_tag", "area", "iteration")
 COUNT_MEASURES = ("total", "created", "closed")
 CHART_STYLES = ("bar", "donut")
 INTERVALS = ("day", "week")
@@ -108,6 +108,9 @@ def _bucket_names(connection: sqlite3.Connection, field: str, row: sqlite3.Row) 
         return [name["name"] if name else ""]
     if field == "project":
         return [row["project_key"]]
+    if field == "project_tag":
+        project = connection.execute("SELECT tags FROM projects WHERE key = ?", (row["project_key"],)).fetchone()
+        return [tag for tag in (project["tags"] if project else "").split(",") if tag] or [""]
     return [row[field]]
 
 
@@ -456,6 +459,7 @@ DEFAULT_DASHBOARDS = (
         {"kind": "cycle", "title": "Lead and cycle time, 30 days", "days": 30},
         {"kind": "count", "title": "Closed, last 30 days", "measure": "closed", "days": 30},
         {"kind": "group", "title": "Open by area", "group_by": "area", "filters": {"open": True}},
+        {"kind": "group", "title": "Open by project tag", "group_by": "project_tag", "filters": {"open": True}},
         {"kind": "group", "title": "Open by tag", "group_by": "label", "filters": {"open": True}},
     ]},
 )

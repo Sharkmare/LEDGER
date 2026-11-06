@@ -105,14 +105,15 @@ function projectForm(existing) {
       { name: "key", label: "Key", kind: "text", required: true, disabled: !!existing, row: "a", placeholder: "APP", help: existing ? "The key cannot change" : "2 to 10 capitals or digits, used in ticket names such as APP-1" },
       { name: "name", label: "Name", kind: "text", required: true, row: "a" },
       { name: "description", label: "Description", kind: "textarea", rows: 3 },
+      { name: "tags", label: "Tags", kind: "text", placeholder: "resonite-research", help: "Comma separated. Projects with the same tag are grouped in the navigator." },
       { name: "lead", label: "Lead", kind: "text", row: "b" },
       ...(existing ? [{ name: "status", label: "Status", kind: "select", row: "b", options: [{ value: "active", label: "Active" }, { value: "archived", label: "Archived" }] }] : []),
       { name: "start", label: "Start", kind: "text", row: "c", placeholder: "YYYY-MM-DD" },
       { name: "target", label: "Target date", kind: "text", row: "c", placeholder: "YYYY-MM-DD" },
     ],
-    values: existing || { status: "active" }, submitLabel: existing ? "Save" : "Create",
+    values: existing ? { ...existing, tags: (existing.tags || []).join(", ") } : { status: "active" }, submitLabel: existing ? "Save" : "Create",
     onSubmit: async (values) => {
-      const details = { name: values.name, description: values.description, lead: values.lead, start: values.start, target: values.target };
+      const details = { name: values.name, description: values.description, lead: values.lead, start: values.start, target: values.target, tags: values.tags || "" };
       if (existing) {
         await api("PATCH", `/api/projects/${existing.key}`, { ...details, status: values.status });
         await afterChange("Project saved");

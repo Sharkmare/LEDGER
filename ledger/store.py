@@ -19,6 +19,7 @@ MAX_ESTIMATE = 10000
 EDITABLE_FIELDS = ("title", "body", "type", "status", "priority", "assignee", "labels", "parent_key", "due", "start", "estimate",
                    "area", "iteration")
 PROJECT_KEY_PATTERN = re.compile(r"^[A-Z][A-Z0-9]{1,9}$")
+PROJECT_TAG_PATTERN = re.compile(r"^[a-z0-9][a-z0-9-]*$")
 TICKET_KEY_PATTERN = re.compile(r"^([A-Z][A-Z0-9]{1,9})-(\d+)$")
 MAX_TITLE_CHARS = 200
 
@@ -228,6 +229,7 @@ COLUMN_ADDITIONS = {
     "projects": {
         "lead": "TEXT NOT NULL DEFAULT ''", "status": "TEXT NOT NULL DEFAULT 'active'",
         "start": "TEXT NOT NULL DEFAULT ''", "target": "TEXT NOT NULL DEFAULT ''",
+        "tags": "TEXT NOT NULL DEFAULT ''",
     },
     "tickets": {
         "start": "TEXT NOT NULL DEFAULT ''", "estimate": "REAL",
@@ -400,8 +402,27 @@ def _clean_labels(labels: Any) -> list[str]:
     return cleaned
 
 
+def clean_project_tags(raw: Any) -> str:
+    items = raw.split(",") if isinstance(raw, str) else list(raw or [])
+    cleaned = set()
+    for item in items:
+        tag = "-".join(str(item).lower().split())
+        if not tag:
+            continue
+        if not PROJECT_TAG_PATTERN.match(tag):
+            raise LedgerError(f"bad project tag {item!r}: use letters, digits and hyphens")
+        cleaned.add(tag)
+    return ",".join(sorted(cleaned))
+
+
+def _project_view(row: sqlite3.Row) -> dict:
+    project = dict(row)
+    project["tags"] = [tag for tag in project.get("tags", "").split(",") if tag]
+    return project
+
+
 def create_project(connection: sqlite3.Connection, key: str, name: str, description: str = "", lead: str = "",
-                   start: str = "", target: str = "") -> dict:
+                   start: str = "", target: str = "", tags: Any = "") -> dict:
     key = str(key).strip().upper()
     if not PROJECT_KEY_PATTERN.match(key):
         raise LedgerError("project key is 2 to 10 capital letters or digits and starts with a letter")
@@ -413,9 +434,10 @@ def create_project(connection: sqlite3.Connection, key: str, name: str, descript
     lead = _require_text("lead", lead).strip()
     start, target = _clean_date("start", start), _clean_date("target", target)
     _require_order("start", start, "target", target)
+    tags = clean_project_tags(tags)
     connection.execute(
-        "INSERT INTO projects (key, name, description, created, lead, start, target) VALUES (?, ?, ?, ?, ?, ?, ?)",
-        (key, str(name).strip(), description, time.time(), lead, start, target),
+        "INSERT INTO projects (key, name, description, created, lead, start, target, tags) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
+        (key, str(name).strip(), description, time.time(), lead, start, target, tags),
     )
     connection.commit()
     return get_project(connection, key)
@@ -423,7 +445,7 @@ def create_project(connection: sqlite3.Connection, key: str, name: str, descript
 
 def update_project(connection: sqlite3.Connection, key: str, changes: dict) -> dict:
     project = get_project(connection, key)
-    allowed = ("name", "description", "lead", "status", "start", "target")
+    allowed = ("name", "description", "lead", "status", "start", "target", "tags")
     unknown = sorted(set(changes) - set(allowed))
     if unknown:
         raise LedgerError(f"cannot edit {', '.join(unknown)}; editable fields are {', '.join(allowed)}")
@@ -433,6 +455,8 @@ def update_project(connection: sqlite3.Connection, key: str, changes: dict) -> d
             values[field] = _require_choice("status", raw, PROJECT_STATUSES)
         elif field in ("start", "target"):
             values[field] = _clean_date(field, raw)
+        elif field == "tags":
+            values[field] = clean_project_tags(raw)
         elif field == "name":
             values[field] = " ".join(_require_text("name", raw).split())
             if not values[field]:
@@ -451,13 +475,16 @@ def get_project(connection: sqlite3.Connection, key: str) -> dict:
     row = connection.execute("SELECT * FROM projects WHERE key = ?", (str(key).upper(),)).fetchone()
     if not row:
         raise NotFound(f"no project {key}")
-    return dict(row)
+    return _project_view(row)
 
 
-def list_projects(connection: sqlite3.Connection) -> list[dict]:
+def list_projects(connection: sqlite3.Connection, tag: str | None = None) -> list[dict]:
+    wanted = clean_project_tags(tag) if tag else ""
     projects = []
     for row in connection.execute("SELECT * FROM projects ORDER BY key"):
-        project = dict(row)
+        project = _project_view(row)
+        if wanted and wanted not in project["tags"]:
+            continue
         counts = connection.execute(
             "SELECT status, COUNT(*) AS n FROM tickets WHERE project_key = ? GROUP BY status", (row["key"],)
         ).fetchall()

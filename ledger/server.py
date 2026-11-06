@@ -140,13 +140,14 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
 
     @app.get("/api/projects")
     def projects():
-        return jsonify(store.list_projects(connection))
+        return jsonify(store.list_projects(connection, request.args.get("tag")))
 
     @app.post("/api/projects")
     def new_project():
         payload = body_json()
         created = store.create_project(connection, payload.get("key", ""), payload.get("name", ""), payload.get("description", ""),
-                                      payload.get("lead", ""), payload.get("start", ""), payload.get("target", ""))
+                                      payload.get("lead", ""), payload.get("start", ""), payload.get("target", ""),
+                                      payload.get("tags", ""))
         return jsonify(created), 201
 
     @app.get("/api/tickets")

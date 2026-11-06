@@ -26,6 +26,19 @@ class StoreTests(unittest.TestCase):
     def setUp(self):
         self.connection = fresh_connection()
 
+    def test_project_tags_are_normalised_filtered_and_editable(self):
+        store.create_project(self.connection, "WEB", "Web", tags="Resonite Research, avatars,avatars")
+        self.assertEqual(store.get_project(self.connection, "WEB")["tags"], ["avatars", "resonite-research"])
+        self.assertEqual([p["key"] for p in store.list_projects(self.connection, tag="Resonite Research")], ["WEB"])
+        self.assertEqual(store.list_projects(self.connection, tag="games"), [])
+        store.update_project(self.connection, "WEB", {"tags": ["games"]})
+        self.assertEqual(store.get_project(self.connection, "WEB")["tags"], ["games"])
+        self.assertEqual(store.get_project(self.connection, "APP")["tags"], [])
+
+    def test_bad_project_tag_is_refused(self):
+        with self.assertRaises(store.LedgerError):
+            store.update_project(self.connection, "APP", {"tags": "bad/tag"})
+
     def test_numbers_count_up_per_project(self):
         store.create_project(self.connection, "WEB", "Web")
         first = store.create_ticket(self.connection, "APP", "one")

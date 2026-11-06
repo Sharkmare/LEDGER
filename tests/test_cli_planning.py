@@ -21,6 +21,15 @@ class PlanningCliTests(LiveServerCase):
     def data(self, *arguments):
         return json.loads(self.cli("--json", *arguments))
 
+    def test_project_tags_from_the_command_line(self):
+        self.cli("new-project", "GME", "Games", "--tags", "Resonite Research")
+        self.cli("new-project", "OTH", "Other")
+        self.assertEqual(self.data("project-set", "OTH", "--tags", "tools")["tags"], ["tools"])
+        listed = {project["key"]: project["tags"] for project in self.data("projects")}
+        self.assertEqual((listed["GME"], listed["OTH"]), (["resonite-research"], ["tools"]))
+        self.assertEqual([project["key"] for project in self.data("projects", "--tag", "resonite-research")], ["GME"])
+        self.assertIn("#resonite-research", self.cli("projects", "--tag", "resonite-research"))
+
     def test_areas_boards_iterations_and_planning_from_the_command_line(self):
         self.cli("new-project", "PLN", "Planning")
         self.data("area", "add", "Platform", "--description", "Shared services")

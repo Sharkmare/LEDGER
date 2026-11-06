@@ -213,6 +213,13 @@ function openCount(project) {
   return Object.entries(project.counts).filter(([status]) => !state.meta.closed_statuses.includes(status)).reduce((sum, [, count]) => sum + count, 0);
 }
 
+function projectGroups(projects) {
+  if (!projects.some((p) => (p.tags || []).length)) return [{ tag: "", projects }];
+  const groups = new Map();
+  projects.forEach((p) => (p.tags && p.tags.length ? p.tags : ["untagged"]).forEach((tag) => groups.set(tag, [...(groups.get(tag) || []), p])));
+  return [...groups.keys()].sort((a, b) => (a === "untagged") - (b === "untagged") || a.localeCompare(b)).map((tag) => ({ tag, projects: groups.get(tag) }));
+}
+
 function sectionCollapsed(name) { return state.collapsedSections.includes(name); }
 
 function navItemHtml({ id, label, iconName, tile, count, active, href, kind, indent = 0, twisty }) {
@@ -244,8 +251,11 @@ function navSections() {
   return [
     { name: "Work", items: WORK_ITEMS.filter((i) => matches(i.label)).map((i) => navItemHtml({ id: i.id, label: i.label, iconName: i.icon, kind: "work", active: onTickets && !state.project && state.nav === i.id && ["board", "list"].includes(state.view) })) },
     { name: state.org.name || "Organisation", key: "Organisation", total: state.areas.length, items: [...areaItems, ...(matches("create area") ? [navItemHtml({ id: "create-area", label: "Create area", iconName: "plus", kind: "create-area" })] : [])] },
-    { name: "Projects", total: state.projects.length, items: [
-      ...state.projects.filter((p) => matches(p.key + " " + p.name)).map((p) => navItemHtml({ id: p.key, label: p.name, tile: p.key, count: openCount(p), kind: "project", active: onTickets && state.project === p.key && !["plan", "roadmap"].includes(state.view) })),
+    { name: "Projects", total: state.projects.filter((p) => p.status !== "archived").length, items: [
+      ...projectGroups(state.projects.filter((p) => p.status !== "archived" && matches(p.key + " " + p.name + " " + (p.tags || []).join(" ")))).flatMap((group) => [
+        ...(group.tag ? [navItemHtml({ id: "group:" + group.tag, label: group.tag, iconName: "folder", kind: "project-group", count: group.projects.reduce((sum, p) => sum + openCount(p), 0) })] : []),
+        ...group.projects.map((p) => navItemHtml({ id: p.key, label: p.name, tile: p.key, count: openCount(p), kind: "project", indent: group.tag ? 1 : 0, active: onTickets && state.project === p.key && !["plan", "roadmap"].includes(state.view) })),
+      ]),
       ...(matches("create project") ? [navItemHtml({ id: "create-project", label: "Create project", iconName: "plus", kind: "create-project" })] : []),
     ] },
     { name: "Planning", items: [

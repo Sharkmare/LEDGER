@@ -81,6 +81,15 @@ class GroupTests(unittest.TestCase):
         self.assertEqual([(b["name"], b["value"]) for b in result["buckets"]], [("todo", 2), ("done", 1)])
         self.assertEqual(result["total"], 3)
 
+    def test_project_tag_groups_tickets_by_their_projects_tags(self):
+        connection = workspace()
+        store.update_project(connection, "APP", {"tags": "resonite-research, games"})
+        make(connection, "one", project="APP")
+        make(connection, "two", project="APP")
+        make(connection, "three", project="WEB")
+        buckets = {bucket["key"]: bucket["value"] for bucket in metrics.group_metric(connection, {}, "project_tag")["buckets"]}
+        self.assertEqual(buckets, {"resonite-research": 2, "games": 2, "": 1})
+
     def test_tags_are_unnested_and_unassigned_is_named(self):
         make(self.connection, labels="a,b", assignee="ann", estimate=3)
         make(self.connection, labels="a")
