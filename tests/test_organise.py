@@ -119,6 +119,16 @@ class AreaTests(unittest.TestCase):
     def setUp(self):
         self.connection = workspace()
 
+    def test_area_tags_are_normalised_and_survive_other_edits(self):
+        area = organise.create_area(self.connection, "Pazaak", tags="Resonite Research, games")
+        self.assertEqual(area["tags"], ["games", "resonite-research"])
+        renamed = organise.update_area(self.connection, area["id"], {"name": "Pazaak build"})
+        self.assertEqual(renamed["tags"], ["games", "resonite-research"])
+        cleared = organise.update_area(self.connection, area["id"], {"tags": ""})
+        self.assertEqual(cleared["tags"], [])
+        with self.assertRaises(store.LedgerError):
+            organise.update_area(self.connection, area["id"], {"tags": "bad/tag"})
+
     def test_areas_nest_and_report_paths_and_counts(self):
         platform = organise.create_area(self.connection, "Platform")
         tools = organise.create_area(self.connection, "Tools", parent="Platform")

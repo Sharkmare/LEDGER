@@ -231,6 +231,7 @@ COLUMN_ADDITIONS = {
         "start": "TEXT NOT NULL DEFAULT ''", "target": "TEXT NOT NULL DEFAULT ''",
         "tags": "TEXT NOT NULL DEFAULT ''",
     },
+    "areas": {"tags": "TEXT NOT NULL DEFAULT ''"},
     "tickets": {
         "start": "TEXT NOT NULL DEFAULT ''", "estimate": "REAL",
         "area_id": "INTEGER REFERENCES areas(id)", "iteration_id": "INTEGER REFERENCES iterations(id)",

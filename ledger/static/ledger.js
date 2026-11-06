@@ -213,7 +213,7 @@ function openCount(project) {
   return Object.entries(project.counts).filter(([status]) => !state.meta.closed_statuses.includes(status)).reduce((sum, [, count]) => sum + count, 0);
 }
 
-function projectGroups(projects) {
+function tagGroups(projects) {
   if (!projects.some((p) => (p.tags || []).length)) return [{ tag: "", projects }];
   const groups = new Map();
   projects.forEach((p) => (p.tags && p.tags.length ? p.tags : ["untagged"]).forEach((tag) => groups.set(tag, [...(groups.get(tag) || []), p])));
@@ -233,26 +233,37 @@ function navSections() {
   const filter = state.navFilter.toLowerCase();
   const matches = (label) => !filter || label.toLowerCase().includes(filter);
   const onTickets = state.page === "tickets";
-  const areaItems = [];
+  const areaById = new Map(state.areas.map((a) => [a.id, a]));
+  const rootIdOf = (area) => { let node = area; while (node.parent_id && areaById.has(node.parent_id)) node = areaById.get(node.parent_id); return node.id; };
+  const blocks = new Map();
   let hiddenBelow = Infinity;
   state.areas.forEach((area) => {
     if (area.depth > hiddenBelow) return;
     hiddenBelow = Infinity;
+    const block = blocks.get(rootIdOf(area)) || [];
+    blocks.set(rootIdOf(area), block);
     const areaBoards = state.boards.filter((b) => b.area_id === area.id);
     const hasChildren = areaBoards.length > 0 || state.areas.some((other) => other.parent_id === area.id);
     const folded = !filter && hasChildren && state.collapsedAreas.includes(area.id);
     if (folded) hiddenBelow = area.depth;
     const shownBoards = folded ? [] : areaBoards.filter((b) => matches(b.name) || matches(area.path));
     if (matches(area.path) || areaBoards.some((b) => matches(b.name))) {
-      areaItems.push(navItemHtml({ id: area.id, label: area.name, iconName: "folder", count: area.open_tickets, kind: "area", indent: area.depth, twisty: hasChildren ? (folded ? "closed" : "open") : "", active: state.page === "area" && state.areaId === area.id }));
+      block.push((offset) => navItemHtml({ id: area.id, label: area.name, iconName: "folder", count: area.open_tickets, kind: "area", indent: area.depth + offset, twisty: hasChildren ? (folded ? "closed" : "open") : "", active: state.page === "area" && state.areaId === area.id }));
     }
-    shownBoards.forEach((b) => areaItems.push(navItemHtml({ id: b.id, label: b.name, iconName: "board", count: b.tickets, kind: "board", indent: area.depth + 1, active: state.page === "board" && state.boardId === b.id })));
+    shownBoards.forEach((b) => block.push((offset) => navItemHtml({ id: b.id, label: b.name, iconName: "board", count: b.tickets, kind: "board", indent: area.depth + 1 + offset, active: state.page === "board" && state.boardId === b.id })));
+  });
+  const roots = state.areas.filter((a) => !a.parent_id && (blocks.get(a.id) || []).length);
+  const areaItems = tagGroups(roots).flatMap((group) => {
+    const groupKey = "areagroup:" + group.tag;
+    const folded = !filter && !!group.tag && sectionCollapsed(groupKey);
+    const header = group.tag ? [navItemHtml({ id: groupKey, label: group.tag, iconName: "folder", count: group.projects.reduce((sum, a) => sum + a.open_tickets, 0), kind: "area-group", twisty: folded ? "closed" : "open" })] : [];
+    return folded ? header : [...header, ...group.projects.flatMap((root) => blocks.get(root.id).map((render) => render(group.tag ? 1 : 0)))];
   });
   return [
     { name: "Work", items: WORK_ITEMS.filter((i) => matches(i.label)).map((i) => navItemHtml({ id: i.id, label: i.label, iconName: i.icon, kind: "work", active: onTickets && !state.project && state.nav === i.id && ["board", "list"].includes(state.view) })) },
     { name: state.org.name || "Organisation", key: "Organisation", total: state.areas.length, items: [...areaItems, ...(matches("create area") ? [navItemHtml({ id: "create-area", label: "Create area", iconName: "plus", kind: "create-area" })] : [])] },
     { name: "Projects", total: state.projects.filter((p) => p.status !== "archived").length, items: [
-      ...projectGroups(state.projects.filter((p) => p.status !== "archived" && matches(p.key + " " + p.name + " " + (p.tags || []).join(" ")))).flatMap((group) => [
+      ...tagGroups(state.projects.filter((p) => p.status !== "archived" && matches(p.key + " " + p.name + " " + (p.tags || []).join(" ")))).flatMap((group) => [
         ...(group.tag ? [navItemHtml({ id: "group:" + group.tag, label: group.tag, iconName: "folder", kind: "project-group", count: group.projects.reduce((sum, p) => sum + openCount(p), 0) })] : []),
         ...group.projects.map((p) => navItemHtml({ id: p.key, label: p.name, tile: p.key, count: openCount(p), kind: "project", indent: group.tag ? 1 : 0, active: onTickets && state.project === p.key && !["plan", "roadmap"].includes(state.view) })),
       ]),
@@ -295,15 +306,17 @@ function renderNav() {
 
 function ticketViewOr(view) { return ["summary", "board", "list"].includes(state.view) ? state.view : view; }
 
+function toggleSection(name) {
+  state.collapsedSections = sectionCollapsed(name) ? state.collapsedSections.filter((n) => n !== name) : [...state.collapsedSections, name];
+  remember(STORAGE.sections, JSON.stringify(state.collapsedSections));
+  renderNav();
+}
+
 function wireNav() {
-  byId("navSections").querySelectorAll(".nav-heading").forEach((heading) => heading.addEventListener("click", () => {
-    const name = heading.parentElement.dataset.section;
-    state.collapsedSections = sectionCollapsed(name) ? state.collapsedSections.filter((n) => n !== name) : [...state.collapsedSections, name];
-    remember(STORAGE.sections, JSON.stringify(state.collapsedSections));
-    renderNav();
-  }));
+  byId("navSections").querySelectorAll(".nav-heading").forEach((heading) => heading.addEventListener("click", () => toggleSection(heading.parentElement.dataset.section)));
   byId("navSections").querySelectorAll(".twisty[data-twisty]").forEach((twisty) => twisty.addEventListener("click", (event) => {
     event.stopPropagation();
+    if (twisty.dataset.twisty.startsWith("areagroup:")) { toggleSection(twisty.dataset.twisty); return; }
     const id = Number(twisty.dataset.twisty);
     state.collapsedAreas = state.collapsedAreas.includes(id) ? state.collapsedAreas.filter((n) => n !== id) : [...state.collapsedAreas, id];
     remember(STORAGE.areas, JSON.stringify(state.collapsedAreas));
@@ -312,6 +325,7 @@ function wireNav() {
   const actions = {
     work: (id) => go({ page: "tickets", project: "", nav: id, view: ticketViewOr("board") }),
     project: (id) => go({ page: "tickets", project: id, nav: "all", view: ticketViewOr("board") }),
+    "area-group": (id) => toggleSection(id),
     area: (id) => go({ page: "area", areaId: Number(id) }),
     board: (id) => go({ page: "board", boardId: Number(id), view: ticketViewOr("board") }),
     plan: () => go({ page: "tickets", view: "plan", nav: "all" }),

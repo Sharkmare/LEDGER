@@ -30,6 +30,14 @@ class PlanningCliTests(LiveServerCase):
         self.assertEqual([project["key"] for project in self.data("projects", "--tag", "resonite-research")], ["GME"])
         self.assertIn("#resonite-research", self.cli("projects", "--tag", "resonite-research"))
 
+    def test_area_tags_from_the_command_line(self):
+        added = self.data("area", "add", "Pazaak", "--tags", "Resonite Research")
+        self.assertEqual(added["tags"], ["resonite-research"])
+        changed = self.data("area", "set", str(added["id"]), "--tags", "games,tools")
+        self.assertEqual(changed["tags"], ["games", "tools"])
+        with self.assertRaises(SystemExit):
+            self.cli("area", "set", str(added["id"]))
+
     def test_areas_boards_iterations_and_planning_from_the_command_line(self):
         self.cli("new-project", "PLN", "Planning")
         self.data("area", "add", "Platform", "--description", "Shared services")

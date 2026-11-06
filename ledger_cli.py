@@ -189,6 +189,11 @@ def add_planning_commands(commands) -> None:
     area_add.add_argument("name")
     area_add.add_argument("--parent")
     area_add.add_argument("--description", default="")
+    area_add.add_argument("--tags", default="", help="comma separated tags that group the area in the navigator")
+    area_set = area.add_parser("set", help="change an area")
+    area_set.add_argument("id")
+    for name in ("name", "description", "parent", "tags"):
+        area_set.add_argument(f"--{name}")
     area.add_parser("rm").add_argument("id")
 
     board = commands.add_parser("board", help="boards hold tickets by rule or by pin").add_subparsers(dest="action", required=True)
@@ -427,7 +432,13 @@ def run_area(arguments, base, actor):
     if arguments.action == "list":
         return call(base, "GET", "/api/areas", actor)
     if arguments.action == "add":
-        return call(base, "POST", "/api/areas", actor, drop_empty({"name": arguments.name, "parent": arguments.parent, "description": arguments.description}))
+        return call(base, "POST", "/api/areas", actor,
+                    drop_empty({"name": arguments.name, "parent": arguments.parent, "description": arguments.description, "tags": arguments.tags}))
+    if arguments.action == "set":
+        changes = {name: getattr(arguments, name) for name in ("name", "description", "parent", "tags") if getattr(arguments, name) is not None}
+        if not changes:
+            raise SystemExit("ledger: area set needs at least one field, for example --tags resonite-research")
+        return call(base, "PATCH", f"/api/areas/{arguments.id}", actor, changes)
     return call(base, "DELETE", f"/api/areas/{arguments.id}", actor)
 
 

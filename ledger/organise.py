@@ -52,6 +52,7 @@ def area_subtree_ids(connection: sqlite3.Connection, area_id: int) -> list[int]:
 
 def _area_dict(connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
     area = dict(row)
+    area["tags"] = [tag for tag in area.get("tags", "").split(",") if tag]
     area["path"] = _area_path(connection, row["id"])
     area["depth"] = area["path"].count(" / ")
     area["boards"] = connection.execute("SELECT COUNT(*) FROM boards WHERE area_id = ?", (row["id"],)).fetchone()[0]
@@ -87,29 +88,31 @@ def _clean_area_name(value: Any) -> str:
     return name
 
 
-def create_area(connection: sqlite3.Connection, name: Any, description: Any = "", parent: Any = None) -> dict:
+def create_area(connection: sqlite3.Connection, name: Any, description: Any = "", parent: Any = None, tags: Any = "") -> dict:
     name = _clean_area_name(name)
     description = _require_text("description", description)
     parent_id = store._resolve_area_id(connection, parent)
     _check_sibling_name(connection, parent_id, name, None)
-    cursor = connection.execute("INSERT INTO areas (name, description, parent_id, created) VALUES (?, ?, ?, ?)",
-                                (name, description, parent_id, time.time()))
+    cursor = connection.execute("INSERT INTO areas (name, description, parent_id, created, tags) VALUES (?, ?, ?, ?, ?)",
+                                (name, description, parent_id, time.time(), store.clean_project_tags(tags)))
     connection.commit()
     return get_area(connection, cursor.lastrowid)
 
 
 def update_area(connection: sqlite3.Connection, area_id: Any, changes: dict) -> dict:
     row = _area_row(connection, area_id)
-    unknown = sorted(set(changes) - {"name", "description", "parent"})
+    unknown = sorted(set(changes) - {"name", "description", "parent", "tags"})
     if unknown:
-        raise LedgerError(f"cannot edit {', '.join(unknown)}; editable fields are name, description, parent")
+        raise LedgerError(f"cannot edit {', '.join(unknown)}; editable fields are name, description, parent, tags")
+    tags = store.clean_project_tags(changes["tags"]) if "tags" in changes else row["tags"]
     name = _clean_area_name(changes["name"]) if "name" in changes else row["name"]
     description = _require_text("description", changes["description"]) if "description" in changes else row["description"]
     parent_id = store._resolve_area_id(connection, changes["parent"]) if "parent" in changes else row["parent_id"]
     if parent_id is not None and parent_id in area_subtree_ids(connection, row["id"]):
         raise LedgerError("an area cannot be moved under itself or one of its own sub-areas")
     _check_sibling_name(connection, parent_id, name, row["id"])
-    connection.execute("UPDATE areas SET name = ?, description = ?, parent_id = ? WHERE id = ?", (name, description, parent_id, row["id"]))
+    connection.execute("UPDATE areas SET name = ?, description = ?, parent_id = ?, tags = ? WHERE id = ?",
+                       (name, description, parent_id, tags, row["id"]))
     connection.commit()
     return get_area(connection, row["id"])
 

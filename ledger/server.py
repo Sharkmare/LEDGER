@@ -239,7 +239,8 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
     @app.post("/api/areas")
     def new_area():
         payload = body_json()
-        created = organise.create_area(connection, payload.get("name"), payload.get("description", ""), payload.get("parent"))
+        created = organise.create_area(connection, payload.get("name"), payload.get("description", ""), payload.get("parent"),
+                                     payload.get("tags", ""))
         return jsonify(created), 201
 
     @app.get("/api/areas/<int:area_id>")

@@ -307,9 +307,11 @@ def organisation_schemas() -> dict:
         "Organisation": {"type": "object", "required": ["name"], "properties": {"name": {"type": "string", "example": "My organisation"}}},
         "NewArea": {"type": "object", "required": ["name"], "properties": {
             "name": {"type": "string", "example": "Platform"}, "description": {"type": "string"},
-            "parent": {"type": "string", "description": "Parent area id or path, empty for a top-level area"}}},
+            "parent": {"type": "string", "description": "Parent area id or path, empty for a top-level area"},
+            "tags": {"type": "string", "description": "Comma separated tags that group a top-level area in the navigator"}}},
         "Area": {"type": "object", "properties": {
             "id": count, "name": {"type": "string"}, "description": {"type": "string"}, "parent_id": {"type": "integer", "nullable": True},
+            "tags": {"type": "array", "items": {"type": "string"}},
             "path": {"type": "string", "example": "Platform / Tools"}, "depth": count, "boards": count, "tickets": count,
             "open_tickets": count, "boards_list": {"type": "array", "items": ref("Board")}}},
         "NewBoard": {"type": "object", "required": ["area", "name"], "properties": {

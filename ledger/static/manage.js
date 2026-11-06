@@ -142,15 +142,16 @@ function areaForm(existing, parentId) {
       { name: "name", label: "Name", kind: "text", required: true },
       { name: "description", label: "Description", kind: "textarea", rows: 3 },
       { name: "parent", label: "Inside", kind: "select", options: areaOptions("Nothing, a top-level area", skip) },
+      { name: "tags", label: "Tags", kind: "text", placeholder: "resonite-research", help: "Comma separated. Top-level areas with the same tag are grouped, and the group can be folded." },
     ],
-    values: existing ? { name: existing.name, description: existing.description, parent: existing.parent_id ? String(existing.parent_id) : "" } : { parent: parentId ? String(parentId) : "" },
+    values: existing ? { name: existing.name, description: existing.description, parent: existing.parent_id ? String(existing.parent_id) : "", tags: (existing.tags || []).join(", ") } : { parent: parentId ? String(parentId) : "" },
     submitLabel: existing ? "Save" : "Create",
     buttons: existing ? [{ label: "Delete", danger: true, onClick: async (dialog) => {
       if (!confirm(`Delete the area ${existing.name}? Its tickets keep existing and just lose this area.`)) return;
       if (await guarded(() => api("DELETE", `/api/areas/${existing.id}`))) { dialog.close(); if (state.page === "area") state.page = "tickets"; await afterChange("Area deleted"); }
     } }] : [],
     onSubmit: async (values) => {
-      const payload = { name: values.name, description: values.description, parent: values.parent };
+      const payload = { name: values.name, description: values.description, parent: values.parent, tags: values.tags || "" };
       if (existing) await api("PATCH", `/api/areas/${existing.id}`, payload);
       else { const created = await api("POST", "/api/areas", payload); state.areaId = created.id; state.page = "area"; }
       await afterChange(existing ? "Area saved" : "Area created");
