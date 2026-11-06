@@ -168,7 +168,25 @@ async function loadTicketsPage() {
   state.pageData = null;
 }
 
-async function refresh({ redrawDrawer = true } = {}) {
+const changeTracker = createChangeTracker();
+const RELATIVE_TIME_BUCKET_MS = 60000;
+let dragInProgress = false;
+
+function renderInputs() {
+  return [viewKey(), Math.floor(Date.now() / RELATIVE_TIME_BUCKET_MS), state.org, state.projects, state.areas, state.boards, state.tagList, state.kbSpaces,
+    state.tickets, state.total, state.stats, state.pageData, state.dashboards, state.dashboardData, state.iterationsAll, kbTree.levels];
+}
+
+function selectionInContent() {
+  const selection = getSelection();
+  return !!selection && !selection.isCollapsed && [byId("main"), byId("drawer")].some((area) => area.contains(selection.anchorNode));
+}
+
+function currentPollBlocker() {
+  return pollBlocker({ hidden: document.hidden, typing: isTyping(), dialogOpen: anyDialogOpen(), editing: dashboardState.editing, dragging: dragInProgress, selecting: selectionInContent() });
+}
+
+async function refresh({ redrawDrawer = true, poll = false } = {}) {
   const editorMounted = state.page === "kb" && state.kb.editing && byId("kbBody");
   const overview = await guarded(() => api("GET", "/api/overview"));
   if (overview) { state.org = overview.organisation; state.areas = overview.areas; state.boards = overview.boards; state.projects = overview.projects; }
@@ -177,8 +195,9 @@ async function refresh({ redrawDrawer = true } = {}) {
   if (editorMounted) { renderNav(); return; }
   const loaders = { tickets: loadTicketsPage, area: loadArea, board: loadBoard, dashboards: loadDashboards, manage: loadManage, kb: loadKb };
   await loaders[state.page]();
-  render();
-  if (state.openKey && redrawDrawer && !drawerHasFocus()) openTicket(state.openKey, false);
+  const dataChanged = changeTracker.changed("page", renderInputs());
+  if (dataChanged || !poll) render();
+  if (state.openKey && redrawDrawer && !drawerHasFocus()) openTicket(state.openKey, false, poll);
 }
 
 function go(changes = {}) {
@@ -647,7 +666,7 @@ function treeHtml(node, top = true) {
   return top ? `<ul class="tree"><li>${item}${children}</li></ul>` : item + children;
 }
 
-async function openTicket(key, scroll = true) {
+async function openTicket(key, scroll = true, skipIfUnchanged = false) {
   const ticket = await guarded(() => api("GET", `/api/tickets/${key}`));
   if (!ticket) { closeDrawer(); return; }
   const events = (await guarded(() => api("GET", `/api/tickets/${key}/events`))) || [];
@@ -657,6 +676,8 @@ async function openTicket(key, scroll = true) {
   history.replaceState(null, "", "#" + ticket.key);
   const mentions = (await guarded(() => api("GET", `/api/kb/mentions?ticket=${ticket.key}`))) || [];
   const knowledgeHtml = mentions.length ? `<h4>Knowledge</h4>${mentions.map((p) => `<div class="rowlink" tabindex="0" role="link" data-kb-page-open="${p.id}"><span class="chip">${p.page_type === "tool" ? "tool" : "page"}</span><span>${escapeHtml(p.title)}</span></div>`).join("")}` : "";
+  const drawerChanged = changeTracker.changed("drawer", [ticket, events, iterations, tree, mentions, state.areas]);
+  if (skipIfUnchanged && !drawerChanged && !byId("drawer").hidden) return;
   const progress = ticket.progress;
   const areaChoices = [{ value: "", label: "No area" }, ...state.areas.map((a) => ({ value: String(a.id), label: a.path }))];
   const iterationChoices = [{ value: "", label: "No iteration" }, ...iterations.map((i) => ({ value: String(i.id), label: `${i.name} (${i.state})` }))];
@@ -878,7 +899,10 @@ function setupControls() {
     if (event.key === "?") byId("helpDialog").showModal();
   });
   window.addEventListener("hashchange", () => { const key = location.hash.slice(1); if (KEY_PATTERN.test(key)) openTicket(key); });
-  setInterval(() => { if (!document.hidden && !isTyping() && !anyDialogOpen() && !dashboardState.editing) refresh(); }, POLL_MS);
+  document.addEventListener("dragstart", () => { dragInProgress = true; }, true);
+  document.addEventListener("dragend", () => { dragInProgress = false; }, true);
+  document.addEventListener("drop", () => { dragInProgress = false; }, true);
+  setInterval(() => { if (!currentPollBlocker()) refresh({ poll: true }); }, POLL_MS);
 }
 
 async function start() {
