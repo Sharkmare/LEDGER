@@ -46,6 +46,17 @@ class KnowledgeApiTests(unittest.TestCase):
         refused = self.client.post("/api/kb/pages", json={"space": "ENG", "title": "x", "translation_of": base["id"]})
         self.assertEqual(refused.status_code, 400)
 
+    def test_children_are_paged_by_level_and_a_page_reports_its_neighbours(self):
+        folder = self.page("Folder")
+        leaves = [self.page(f"Leaf {n}", parent=folder["id"]) for n in range(5)]
+        top = self.client.get(f"/api/kb/spaces/{self.space['id']}/children").get_json()
+        self.assertEqual((top["total"], top["items"][0]["title"], top["items"][0]["child_count"]), (1, "Folder", 5))
+        page = self.client.get(f"/api/kb/spaces/{self.space['id']}/children?parent={folder['id']}&offset=1&limit=2").get_json()
+        self.assertEqual((page["total"], [i["title"] for i in page["items"]]), (5, ["Leaf 1", "Leaf 2"]))
+        self.assertEqual(self.client.get(f"/api/kb/spaces/{self.space['id']}/children?limit=x").status_code, 400)
+        detail = self.client.get(f"/api/kb/pages/{leaves[2]['id']}").get_json()
+        self.assertEqual((detail["siblings"]["previous"]["title"], detail["siblings"]["next"]["title"], detail["children_total"]), ("Leaf 1", "Leaf 3", 0))
+
     def test_editing_keeps_history_with_comments_and_can_restore(self):
         page = self.page("Guide", body="one\ntwo")
         edited = self.client.patch(f"/api/kb/pages/{page['id']}", json={"body": "one\ntwo\nthree", "comment": "added three"}, headers={server.ACTOR_HEADER: "bob"}).get_json()

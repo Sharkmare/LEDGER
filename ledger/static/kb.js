@@ -2,7 +2,9 @@
 
 const KB_RECENT_STORAGE = "ledger.kbRecent";
 const KB_DRAFT_PREFIX = "ledger.kbDraft.";
-const KB_COLLAPSED_STORAGE = "ledger.kbCollapsed";
+const KB_EXPANDED_STORAGE = "ledger.kbExpanded";
+const KB_LEVEL_SIZE = 200;
+const KB_START_HERE_LIMIT = 30;
 const KB_RECENT_LIMIT = 8;
 const KB_AUTOSAVE_MS = 2000;
 const KB_PREVIEW_DELAY_MS = 120;
@@ -31,8 +33,40 @@ function kbRemember(entry) {
   remember(KB_RECENT_STORAGE, JSON.stringify(next));
 }
 
-function kbCollapsed() {
-  try { return JSON.parse(recall(KB_COLLAPSED_STORAGE, "[]")); } catch (_) { return []; }
+const kbTree = { spaceId: null, levels: {} };
+
+function kbExpanded() {
+  try { return JSON.parse(recall(KB_EXPANDED_STORAGE, "[]")); } catch (_) { return []; }
+}
+
+function kbExpand(ids) {
+  const open = kbExpanded();
+  const next = [...new Set([...open, ...ids])];
+  if (next.length !== open.length) remember(KB_EXPANDED_STORAGE, JSON.stringify(next));
+}
+
+function kbLevelUrl(spaceId, key, offset, limit) {
+  return `/api/kb/spaces/${spaceId}/children?parent=${key === "root" ? "" : key}&offset=${offset}&limit=${limit}`;
+}
+
+async function loadKbLevel(spaceId, key) {
+  const loaded = kbTree.levels[key] ? kbTree.levels[key].items.length : 0;
+  const level = await guarded(() => api("GET", kbLevelUrl(spaceId, key, 0, Math.max(KB_LEVEL_SIZE, loaded))));
+  if (level) kbTree.levels[key] = level;
+}
+
+async function loadKbTree(spaceId, ancestorIds) {
+  if (kbTree.spaceId !== spaceId) { kbTree.spaceId = spaceId; kbTree.levels = {}; }
+  kbExpand(ancestorIds);
+  const keys = [...new Set(["root", ...kbExpanded().map(String)])];
+  await Promise.all(keys.map((key) => loadKbLevel(spaceId, key)));
+}
+
+async function showMoreKbLevel(key) {
+  const level = kbTree.levels[key];
+  const more = await guarded(() => api("GET", kbLevelUrl(kbTree.spaceId, key, level.items.length, KB_LEVEL_SIZE)));
+  if (more) kbTree.levels[key] = { ...more, items: [...level.items, ...more.items] };
+  renderKb();
 }
 
 function kbGo(partial) {
@@ -92,7 +126,7 @@ async function loadKb() {
     if (space) {
       state.kb.spaceId = space.id;
       data.space = space;
-      data.tree = (await guarded(() => api("GET", `/api/kb/spaces/${space.id}/tree`))) || [];
+      await loadKbTree(space.id, []);
     }
   }
   if (view === "page" && state.kb.pageId) {
@@ -101,7 +135,7 @@ async function loadKb() {
     if (!data.page) { state.kb.view = "home"; state.kb.pageId = null; } else {
       kbLive.viewed = state.kb.pageId;
       data.space = data.spaceMap[data.page.space.id];
-      data.tree = (await guarded(() => api("GET", `/api/kb/spaces/${data.page.space.id}/tree`))) || [];
+      await loadKbTree(data.page.space.id, data.page.breadcrumbs.map((crumb) => crumb.id));
       state.kb.spaceId = data.page.space.id;
       kbRemember({ kind: data.page.page_type === "tool" ? "tool" : "page", id: data.page.id, title: data.page.title });
       if (state.kb.history) data.versions = (await guarded(() => api("GET", `/api/kb/pages/${data.page.id}/versions`))) || [];
@@ -222,46 +256,54 @@ function wireFindResults(root, after = () => {}) {
   }));
 }
 
-function treeNodeHtml(node, activeId, collapsed) {
-  const open = !collapsed.includes(node.id);
-  const children = node.children.length ? `<ul class="kb-children"${open ? "" : " hidden"}>${node.children.map((c) => `<li>${treeNodeHtml(c, activeId, collapsed)}</li>`).join("")}</ul>` : "";
-  return `<div class="kb-node${node.id === activeId ? " active" : ""}" draggable="true" data-id="${node.id}" data-parent="${node.parent_id || ""}" data-position="${node.position}">
-    <button type="button" class="twist${node.children.length ? "" : " empty"}" data-twist="${node.id}" aria-label="Expand or collapse" aria-expanded="${open}">${node.children.length ? (open ? "&#9662;" : "&#9656;") : ""}</button>
-    <a class="node-title" tabindex="0" data-kb-open="${node.id}">${escapeHtml(node.title)}</a>${node.status === "draft" ? `<span class="chip">draft</span>` : ""}
+function treeNodeHtml(node, context) {
+  const open = node.child_count > 0 && context.expanded.has(node.id);
+  const level = open ? kbTree.levels[String(node.id)] : null;
+  const children = level ? `<ul class="kb-children">${treeLevelHtml(String(node.id), level, context)}</ul>` : "";
+  return `<div class="kb-node${node.id === context.activeId ? " active" : ""}" draggable="true" data-id="${node.id}" data-parent="${node.parent_id || ""}" data-position="${node.position}">
+    <button type="button" class="twist${node.child_count ? "" : " empty"}" data-twist="${node.id}" aria-label="Expand or collapse" aria-expanded="${open}">${node.child_count ? (open ? "&#9662;" : "&#9656;") : ""}</button>
+    <a class="node-title" tabindex="0" data-kb-open="${node.id}">${escapeHtml(node.title)}</a>${node.status === "draft" ? `<span class="chip">draft</span>` : ""}${node.child_count ? `<span class="node-count">${node.child_count}</span>` : ""}
     <button type="button" class="node-add" data-add-child="${node.id}" title="Add a sub-page" aria-label="Add a sub-page">+</button></div>${children}`;
 }
 
+function treeLevelHtml(key, level, context) {
+  const rows = level.items.map((item) => `<li>${treeNodeHtml(item, context)}</li>`).join("");
+  const remaining = level.total - level.items.length;
+  const more = remaining > 0 ? `<li><button type="button" class="ghost small kb-more" data-more="${key}">Show ${Math.min(remaining, KB_LEVEL_SIZE)} more (${remaining} left)</button></li>` : "";
+  return rows + more;
+}
+
 function renderKbLayout(renderContent) {
-  const { space, tree } = state.pageData;
-  const activeId = state.kb.view === "page" ? state.kb.pageId : null;
-  const collapsed = kbCollapsed();
+  const { space } = state.pageData;
+  const context = { activeId: state.kb.view === "page" ? state.kb.pageId : null, expanded: new Set(kbExpanded()) };
+  const rootLevel = kbTree.levels.root || { items: [], total: 0 };
   const spaces = state.pageData.overview.spaces.filter((s) => s.kind === "docs");
   byId("main").innerHTML = `<div class="kb-layout"><nav class="kb-tree" aria-label="Pages in ${escapeHtml(space.name)}">
       <div class="kb-tree-head">${spaceTile(space, 26)}<select id="kbSpaceSwitch" aria-label="Space">${spaces.map((s) => `<option value="${s.id}"${s.id === space.id ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></div>
       <div class="kb-tree-actions"><button type="button" class="ghost small" id="kbTreeNew">New page</button></div>
-      <div class="kb-tree-body" id="kbTreeBody">${tree.length ? `<ul class="kb-roots">${tree.map((n) => `<li>${treeNodeHtml(n, activeId, collapsed)}</li>`).join("")}</ul>` : `<div class="empty-line">No pages yet.</div>`}</div></nav>
+      <div class="kb-tree-body" id="kbTreeBody">${rootLevel.items.length ? `<ul class="kb-roots">${treeLevelHtml("root", rootLevel, context)}</ul>` : `<div class="empty-line">No pages yet.</div>`}</div></nav>
     <section class="kb-content" id="kbContent"></section></div>`;
   const tool = state.pageData.overview.spaces.find((s) => s.kind === "tools");
   byId("kbSpaceSwitch").addEventListener("change", (event) => kbGo({ view: "space", spaceId: Number(event.target.value), pageId: null }));
   byId("kbTreeNew").addEventListener("click", () => newPageDialog({ space: space.id }));
-  wireTree(byId("kbTreeBody"), tree, space);
+  wireTree(byId("kbTreeBody"), space);
   renderContent(byId("kbContent"));
   void tool;
 }
 
-function wireTree(container, tree, space) {
+function wireTree(container, space) {
   wireKbLinks(container);
-  container.querySelectorAll("[data-twist]").forEach((button) => button.addEventListener("click", () => {
+  container.querySelectorAll("[data-twist]").forEach((button) => button.addEventListener("click", async () => {
     const id = Number(button.dataset.twist);
-    const list = kbCollapsed();
-    const next = list.includes(id) ? list.filter((n) => n !== id) : [...list, id];
-    remember(KB_COLLAPSED_STORAGE, JSON.stringify(next));
+    const open = kbExpanded();
+    const next = open.includes(id) ? open.filter((n) => n !== id) : [...open, id];
+    remember(KB_EXPANDED_STORAGE, JSON.stringify(next));
+    if (next.includes(id) && !kbTree.levels[String(id)]) await loadKbLevel(kbTree.spaceId, String(id));
     renderKb();
   }));
+  container.querySelectorAll("[data-more]").forEach((button) => button.addEventListener("click", () => showMoreKbLevel(button.dataset.more)));
   container.querySelectorAll("[data-add-child]").forEach((button) => button.addEventListener("click", () => newPageDialog({ space: space.id, parent: Number(button.dataset.addChild) })));
-  const flat = [];
-  const walk = (nodes) => nodes.forEach((n) => { flat.push(n); walk(n.children); });
-  walk(tree);
+  const flat = Object.values(kbTree.levels).flatMap((level) => level.items);
   container.querySelectorAll(".kb-node").forEach((node) => {
     node.addEventListener("dragstart", (event) => { event.dataTransfer.setData("text/plain", node.dataset.id); node.classList.add("dragging"); });
     node.addEventListener("dragend", () => node.classList.remove("dragging"));
@@ -301,9 +343,10 @@ async function moveInTree(flat, draggedId, target, where) {
 }
 
 function renderSpaceHome(container) {
-  const { space, tree } = state.pageData;
+  const { space } = state.pageData;
+  const roots = kbTree.levels.root || { items: [], total: 0 };
   container.innerHTML = `<div class="kb-doc"><h1>${escapeHtml(space.name)}</h1>${space.description ? `<p class="page-intro">${escapeHtml(space.description)}</p>` : ""}
-    ${tree.length ? `<div class="section-title">Start here</div><div class="kb-shelf">${tree.map((p) => pageRow(p, false)).join("")}</div>` : `<div class="empty"><h2>This space is empty</h2><p>Pages you add appear in the tree on the left.</p><button class="primary" id="kbEmptyNew">Create the first page</button></div>`}</div>`;
+    ${roots.items.length ? `<div class="section-title">Start here</div><div class="kb-shelf">${roots.items.slice(0, KB_START_HERE_LIMIT).map(shelfRowHtml).join("")}</div>${roots.total > KB_START_HERE_LIMIT ? `<p class="muted">${roots.total - KB_START_HERE_LIMIT} more in the tree.</p>` : ""}` : `<div class="empty"><h2>This space is empty</h2><p>Pages you add appear in the tree on the left.</p><button class="primary" id="kbEmptyNew">Create the first page</button></div>`}</div>`;
   wireKbLinks(container);
   const empty = byId("kbEmptyNew");
   if (empty) empty.addEventListener("click", () => newPageDialog({ space: space.id }));
@@ -377,14 +420,28 @@ function wireHelpful(page) {
 }
 
 function siblingsNav(page) {
-  const { tree } = state.pageData;
-  const find = (nodes, parent) => { for (const node of nodes) { if (node.id === page.id) return { list: nodes, node }; const inner = find(node.children, node); if (inner) return inner; } return null; };
-  const located = find(tree, null);
-  if (!located) return "";
-  const index = located.list.findIndex((n) => n.id === page.id);
-  const previous = located.list[index - 1];
-  const next = located.list[index + 1];
+  const { previous, next } = page.siblings;
   return previous || next ? `<div class="kb-prevnext">${previous ? `<a data-kb-open="${previous.id}" tabindex="0">&#8592; ${escapeHtml(previous.title)}</a>` : "<span></span>"}${next ? `<a data-kb-open="${next.id}" tabindex="0">${escapeHtml(next.title)} &#8594;</a>` : ""}</div>` : "";
+}
+
+function shelfRowHtml(child) {
+  return `<div class="kb-row" tabindex="0" role="link" data-kb-open="${child.id}"><span class="title">${escapeHtml(child.title)}</span>${child.status === "draft" ? `<span class="chip">draft</span>` : ""}</div>`;
+}
+
+function wireShelfMore(page) {
+  const button = byId("kbShelfMore");
+  if (!button) return;
+  const shelf = byId("kbShelf");
+  button.addEventListener("click", async () => {
+    const shown = shelf.querySelectorAll(".kb-row").length;
+    const more = await guarded(() => api("GET", kbLevelUrl(page.space.id, String(page.id), shown, KB_LEVEL_SIZE)));
+    if (!more) return;
+    shelf.insertAdjacentHTML("beforeend", more.items.map(shelfRowHtml).join(""));
+    wireKbLinks(shelf);
+    const total = shelf.querySelectorAll(".kb-row").length;
+    byId("kbShelfCount").textContent = total < page.children_total ? ` (${total} of ${page.children_total})` : "";
+    if (total >= page.children_total) button.remove();
+  });
 }
 
 function renderPageRead(container) {
@@ -402,9 +459,10 @@ function renderPageRead(container) {
         ${page.labels.map((l) => `<span class="chip tint" style="--tint:${tagColor(l)}">${escapeHtml(l)}</span>`).join("")}</div>
       ${pageActionsHtml(page)}
       <div class="md">${rendered.html || `<p class="muted">This page is empty. Press e to start writing.</p>`}</div>
-      ${page.children.length ? `<div class="section-title">Sub-pages</div><div class="kb-shelf">${page.children.map((c) => `<div class="kb-row" tabindex="0" role="link" data-kb-open="${c.id}"><span class="title">${escapeHtml(c.title)}</span>${c.status === "draft" ? `<span class="chip">draft</span>` : ""}</div>`).join("")}</div>` : ""}
+      ${page.children.length ? `<div class="section-title">Sub-pages<span id="kbShelfCount">${page.children_total > page.children.length ? ` (${page.children.length} of ${page.children_total})` : ""}</span></div><div class="kb-shelf" id="kbShelf">${page.children.map(shelfRowHtml).join("")}</div>${page.children_total > page.children.length ? `<button type="button" class="ghost small" id="kbShelfMore">Show more</button>` : ""}` : ""}
       ${siblingsNav(page)}${helpfulHtml(page)}</article><aside class="kb-rail">${rail}</aside></div>`;
   wireKbLinks(container);
+  wireShelfMore(page);
   wirePageActions(page);
   wireHelpful(page);
   container.querySelectorAll("[data-ticket-open]").forEach((row) => activateOnKey(row, () => openTicket(row.dataset.ticketOpen)));
@@ -434,7 +492,7 @@ function renderEditor() {
   let draft = null;
   try { draft = draftText ? JSON.parse(draftText) : null; } catch (_) { draft = null; }
   const usable = draft && (draft.body !== page.body || draft.title !== page.title);
-  const parents = flattenTree(state.pageData.tree).filter((n) => n.id !== page.id && !isDescendant(state.pageData.tree, page.id, n.id));
+  const currentParent = page.breadcrumbs.length ? page.breadcrumbs[page.breadcrumbs.length - 1] : null;
   byId("main").innerHTML = `<div class="kb-editor">
     <div class="kb-editor-head"><input id="kbTitle" class="kb-title-input" value="${escapeHtml(page.title)}" aria-label="Page title" maxlength="200" autocomplete="off">
       <div class="kb-editor-actions"><input id="kbComment" placeholder="What changed? (optional)" aria-label="What changed" autocomplete="off">
@@ -447,22 +505,10 @@ function renderEditor() {
     <div class="kb-split"><div class="kb-write"><textarea id="kbBody" spellcheck="true" aria-label="Page text">${escapeHtml(page.body)}</textarea><div id="kbSuggest" class="kb-suggest" hidden></div></div>
       <div class="kb-preview md" id="kbPreview"></div></div>
     <div class="kb-editor-foot"><label>Tags <input id="kbLabels" value="${escapeHtml(page.labels.join(", "))}" placeholder="comma separated" autocomplete="off"></label>
-      <label>Sub-page of <select id="kbParent"><option value="">Top level</option>${parents.map((n) => `<option value="${n.id}"${n.id === page.parent_id ? " selected" : ""}>${"&nbsp;".repeat(n.depth * 3)}${escapeHtml(n.title)}</option>`).join("")}</select></label>
+      <label>Sub-page of <input id="kbParentFind" placeholder="Find a parent" autocomplete="off"><select id="kbParent"><option value="">Top level</option>${currentParent ? `<option value="${currentParent.id}" selected>${escapeHtml(currentParent.title)}</option>` : ""}</select></label>
       <label>Review in days <input id="kbReview" type="number" min="1" placeholder="${page.review_by ? "keep" : "none"}"></label>
       ${page.status === "draft" ? "" : `<label>Status <select id="kbStatus"><option value="published"${page.status === "published" ? " selected" : ""}>Published</option><option value="draft">Draft</option></select></label>`}</div></div>`;
   wireEditor(page, draft);
-}
-
-function flattenTree(nodes, depth = 0, out = []) {
-  nodes.forEach((n) => { out.push({ id: n.id, title: n.title, depth, parent_id: n.parent_id }); flattenTree(n.children, depth + 1, out); });
-  return out;
-}
-
-function isDescendant(tree, ancestorId, candidateId) {
-  const find = (nodes) => { for (const n of nodes) { if (n.id === ancestorId) return n; const inner = find(n.children); if (inner) return inner; } return null; };
-  const root = find(tree);
-  const has = (node) => node.children.some((c) => c.id === candidateId || has(c));
-  return root ? has(root) : false;
 }
 
 function editorSnapshot() {
@@ -514,6 +560,19 @@ function wireEditor(page, draft) {
   body.addEventListener("input", () => { touch(); suggestWikiLinks(body); });
   byId("kbTitle").addEventListener("input", touch);
   byId("kbSave").addEventListener("click", save);
+  byId("kbParentFind").addEventListener("input", (event) => {
+    clearTimeout(kbLive.findTimer);
+    kbLive.findTimer = setTimeout(async () => {
+      const text = event.target.value.trim();
+      if (!text) return;
+      const hits = (await guarded(() => api("GET", `/api/kb/search?q=${encodeURIComponent(text)}&space=${page.space.id}&type=article&limit=15`))) || [];
+      const select = byId("kbParent");
+      const chosen = select.options[select.selectedIndex];
+      const kept = chosen && chosen.value ? [{ id: chosen.value, title: chosen.textContent }] : [];
+      const options = [...kept, ...hits.filter((hit) => hit.id !== page.id && !kept.some((k) => Number(k.id) === hit.id))];
+      select.innerHTML = `<option value="">Top level</option>` + options.map((hit) => `<option value="${hit.id}"${kept.length && Number(kept[0].id) === hit.id ? " selected" : ""}>${escapeHtml(hit.title)}</option>`).join("");
+    }, 250);
+  });
   byId("kbCancel").addEventListener("click", cancel);
   const restore = byId("kbRestoreDraft");
   if (restore) restore.addEventListener("click", () => { byId("kbTitle").value = draft.title; body.value = draft.body; update(); dirty = true; byId("kbRestoreDraft").closest(".kb-draft-banner").remove(); });

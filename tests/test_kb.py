@@ -76,6 +76,31 @@ class PageTests(unittest.TestCase):
         self.assertEqual([(entry["locale"], entry["current"]) for entry in kb.get_page(self.connection, base["id"])["languages"]], [("", True), ("fr", False), ("ja", False)])
         self.assertEqual(kb.get_page(self.connection, other["id"])["languages"], [])
 
+    def test_levels_page_one_folder_at_a_time_with_child_counts(self):
+        folder = kb.create_page(self.connection, "ENG", "Folder")
+        for number in range(5):
+            kb.create_page(self.connection, "ENG", f"Leaf {number}", parent=folder["id"])
+        kb.create_page(self.connection, "ENG", "Leaf 0/ja", parent=folder["id"], translation_of=kb.list_pages(self.connection, space="ENG", parent=folder["id"], order="tree")[0]["id"], locale="ja")
+        roots = kb.level(self.connection, "ENG")
+        self.assertEqual((roots["total"], [(i["title"], i["child_count"]) for i in roots["items"]]), (1, [("Folder", 5)]))
+        first = kb.level(self.connection, "ENG", folder["id"], 0, 2)
+        second = kb.level(self.connection, "ENG", folder["id"], 2, 2)
+        self.assertEqual((first["total"], [i["title"] for i in first["items"]], [i["title"] for i in second["items"]]), (5, ["Leaf 0", "Leaf 1"], ["Leaf 2", "Leaf 3"]))
+        self.assertEqual(kb.level(self.connection, "ENG", folder["id"], 4, 10)["items"][0]["title"], "Leaf 4")
+        for bad in ({"offset": "x"}, {"limit": "-1"}):
+            with self.assertRaises(kb.LedgerError):
+                kb.level(self.connection, "ENG", folder["id"], **bad)
+
+    def test_a_page_reports_a_bounded_child_list_with_the_total_and_its_neighbours(self):
+        folder = kb.create_page(self.connection, "ENG", "Folder")
+        ids = [kb.create_page(self.connection, "ENG", f"Leaf {n}", parent=folder["id"])["id"] for n in range(kb.CHILD_PREVIEW_LIMIT + 5)]
+        page = kb.get_page(self.connection, folder["id"])
+        self.assertEqual((len(page["children"]), page["children_total"]), (kb.CHILD_PREVIEW_LIMIT, kb.CHILD_PREVIEW_LIMIT + 5))
+        middle = kb.get_page(self.connection, ids[3])["siblings"]
+        self.assertEqual((middle["previous"]["id"], middle["next"]["id"]), (ids[2], ids[4]))
+        edges = (kb.get_page(self.connection, ids[0])["siblings"], kb.get_page(self.connection, ids[-1])["siblings"])
+        self.assertEqual((edges[0]["previous"], edges[0]["next"]["id"], edges[1]["previous"]["id"], edges[1]["next"]), (None, ids[1], ids[-2], None))
+
     def test_many_links_resolve_in_a_handful_of_queries_and_case_insensitively(self):
         target = kb.create_page(self.connection, "ENG", "Target Page")
         body = " ".join(f"[[Missing {n}]]" for n in range(1200)) + " [[target PAGE]]"

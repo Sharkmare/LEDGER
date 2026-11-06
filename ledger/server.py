@@ -447,6 +447,11 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
     def kb_tree(space_id):
         return jsonify(kb.tree(connection, space_id))
 
+    @app.get("/api/kb/spaces/<int:space_id>/children")
+    def kb_children(space_id):
+        arguments = request.args
+        return jsonify(kb.level(connection, space_id, arguments.get("parent"), arguments.get("offset", 0), arguments.get("limit", kb.LEVEL_LIMIT_DEFAULT)))
+
     @app.get("/api/kb/tools")
     def kb_tools():
         arguments = request.args

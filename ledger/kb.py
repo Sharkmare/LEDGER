@@ -324,7 +324,10 @@ def _clean_review_by(value: Any) -> str:
     return store._clean_date("review_by", value)
 
 
+CHILD_PREVIEW_LIMIT = 100
 TITLE_LOOKUP_BATCH = 500
+LEVEL_LIMIT_DEFAULT = 200
+LEVEL_LIMIT_MAX = 1000
 LOCALE_PATTERN = re.compile(r"^[a-z]{2,3}(-[a-z0-9]+)*$")
 
 
@@ -455,6 +458,18 @@ def _resolve_titles(connection: sqlite3.Connection, targets: list[str]) -> dict:
     return found
 
 
+def _neighbours(connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
+    scope = "space_id = ? AND parent_id IS ? AND status != 'archived' AND translation_of IS NULL"
+    arguments = (row["space_id"], row["parent_id"])
+    previous = connection.execute(
+        f"SELECT id, title FROM kb_pages WHERE {scope} AND (position < ? OR (position = ? AND id < ?)) ORDER BY position DESC, id DESC LIMIT 1",
+        (*arguments, row["position"], row["position"], row["id"])).fetchone()
+    following = connection.execute(
+        f"SELECT id, title FROM kb_pages WHERE {scope} AND (position > ? OR (position = ? AND id > ?)) ORDER BY position, id LIMIT 1",
+        (*arguments, row["position"], row["position"], row["id"])).fetchone()
+    return {"previous": dict(previous) if previous else None, "next": dict(following) if following else None}
+
+
 def _languages(connection: sqlite3.Connection, row: sqlite3.Row) -> list[dict]:
     base_id = row["translation_of"] or row["id"]
     base = _page_row(connection, base_id)
@@ -476,7 +491,12 @@ def get_page(connection: sqlite3.Connection, page_id: Any, actor: str | None = N
     page.update({"body": row["body"], "meta": json.loads(row["meta"]), "source": row["source"], "space": {"id": space["id"], "key": space["key"], "name": space["name"],
                  "kind": space["kind"], "color": space["color"]}, "breadcrumbs": _breadcrumbs(connection, row)})
     page["children"] = [{"id": child["id"], "title": child["title"], "status": child["status"], "page_type": child["page_type"], "position": child["position"]}
-                        for child in connection.execute("SELECT * FROM kb_pages WHERE parent_id = ? AND status != 'archived' AND translation_of IS NULL ORDER BY position, id", (row["id"],))]
+                        for child in connection.execute(
+                            "SELECT id, title, status, page_type, position FROM kb_pages WHERE parent_id = ? AND status != 'archived' AND translation_of IS NULL ORDER BY position, id LIMIT ?",
+                            (row["id"], CHILD_PREVIEW_LIMIT))]
+    page["children_total"] = connection.execute(
+        "SELECT COUNT(*) FROM kb_pages WHERE parent_id = ? AND status != 'archived' AND translation_of IS NULL", (row["id"],)).fetchone()[0]
+    page["siblings"] = _neighbours(connection, row)
     page["languages"] = _languages(connection, row)
     page["backlinks"] = [{"id": link["id"], "title": link["title"]} for link in connection.execute(
         "SELECT p.id, p.title FROM kb_links l JOIN kb_pages p ON p.id = l.page_id WHERE l.kind = 'page' AND l.target = ? AND p.id != ? AND p.status != 'archived' ORDER BY p.title",
@@ -606,6 +626,23 @@ def list_pages(connection: sqlite3.Connection, space: Any = None, parent: Any = 
     where = f"WHERE {' AND '.join(clauses)}" if clauses else ""
     rows = connection.execute(f"SELECT * FROM kb_pages {where} ORDER BY {ordering} LIMIT ?", (*parameters, limit)).fetchall()
     return [_summary_dict(connection, row) for row in rows]
+
+
+def level(connection: sqlite3.Connection, space: Any, parent: Any = None, offset: Any = 0, limit: Any = LEVEL_LIMIT_DEFAULT) -> dict:
+    space_row = _space_row(connection, space)
+    parent_id = None if parent in (None, "", "root") else _check_parent(connection, parent, space_row["id"], None)
+    for name, value in (("offset", offset), ("limit", limit)):
+        if isinstance(value, bool) or not str(value).isdigit():
+            raise LedgerError(f"{name} must be a whole number")
+    offset, limit = int(offset), min(max(int(limit), 1), LEVEL_LIMIT_MAX)
+    scope = "space_id = ? AND parent_id IS ? AND status != 'archived' AND translation_of IS NULL"
+    total = connection.execute(f"SELECT COUNT(*) FROM kb_pages WHERE {scope}", (space_row["id"], parent_id)).fetchone()[0]
+    rows = connection.execute(
+        f"SELECT p.id, p.parent_id, p.position, p.title, p.page_type, p.status,"
+        f" (SELECT COUNT(*) FROM kb_pages c WHERE c.parent_id = p.id AND c.status != 'archived' AND c.translation_of IS NULL) AS child_count"
+        f" FROM kb_pages p WHERE p.{scope.replace(' AND ', ' AND p.')} ORDER BY p.position, p.id LIMIT ? OFFSET ?",
+        (space_row["id"], parent_id, limit, offset)).fetchall()
+    return {"total": total, "offset": offset, "items": [dict(row) for row in rows]}
 
 
 def tree(connection: sqlite3.Connection, space: Any) -> list[dict]:
