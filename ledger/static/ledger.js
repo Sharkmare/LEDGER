@@ -46,7 +46,7 @@ Object.assign(ICONS, {
 const state = {
   meta: null, org: { name: "" }, projects: [], areas: [], boards: [], tagList: [], tickets: [], total: 0, stats: null,
   page: "tickets", project: "", nav: "all", view: "board", areaId: null, boardId: null, dashboards: [], dashboardId: null, dashboardData: null,
-  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], sort: { field: "", direction: "asc" },
+  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], sort: { field: "", direction: "asc" }, filters: emptyFilters(),
 };
 
 const byId = (id) => document.getElementById(id);
@@ -148,10 +148,10 @@ function statsFrom(tickets) {
 function currentFilters() {
   return {
     project: state.project,
-    assignee: state.nav === "mine" ? actorName() : byId("filterAssignee").value,
-    status: state.nav === "blocked" ? "blocked" : "",
-    type: byId("filterType").value, priority: byId("filterPriority").value, label: byId("filterLabel").value,
-    q: byId("searchBox").value.trim(), open: state.nav === "open" || byId("filterOpen").checked ? "1" : "",
+    assignee: state.nav === "mine" ? actorName() : state.filters.assignee,
+    status: state.nav === "blocked" ? "blocked" : state.filters.status,
+    type: state.filters.type, priority: state.filters.priority, label: state.filters.label,
+    q: byId("searchBox").value.trim(), open: state.nav === "open" || state.filters.open ? "1" : "",
   };
 }
 
@@ -177,7 +177,6 @@ async function refresh({ redrawDrawer = true } = {}) {
   if (editorMounted) { renderNav(); return; }
   const loaders = { tickets: loadTicketsPage, area: loadArea, board: loadBoard, dashboards: loadDashboards, manage: loadManage, kb: loadKb };
   await loaders[state.page]();
-  refreshFilterOptions();
   render();
   if (state.openKey && redrawDrawer && !drawerHasFocus()) openTicket(state.openKey, false);
 }
@@ -195,18 +194,64 @@ function go(changes = {}) {
   return refresh();
 }
 
-function refreshFilterOptions() {
-  const assignee = byId("filterAssignee");
-  const chosen = assignee.value;
-  const names = Object.keys((state.stats && state.stats.by_assignee) || {}).sort((a, b) => a.localeCompare(b));
-  if (chosen && !names.includes(chosen)) names.push(chosen);
-  fillSelect(assignee, names, (n) => n, "Anyone");
-  assignee.value = chosen;
-  assignee.disabled = state.nav === "mine";
-  const label = byId("filterLabel");
-  const picked = label.value;
-  fillSelect(label, state.tagList.map((t) => t.name), (n) => n, "Any");
-  label.value = picked;
+function filterValues(fieldId) {
+  const plain = (values) => values.map((value) => ({ value, label: value }));
+  if (fieldId === "status") return state.meta.statuses.map((value) => ({ value, label: STATUS_LABELS[value] }));
+  if (fieldId === "priority") return plain(state.meta.priorities);
+  if (fieldId === "type") return plain(state.meta.types);
+  if (fieldId === "label") return plain(state.tagList.map((tag) => tag.name));
+  const names = Object.keys((state.stats && state.stats.by_assignee) || {}).filter(Boolean).sort((a, b) => a.localeCompare(b));
+  if (state.filters.assignee && !names.includes(state.filters.assignee)) names.push(state.filters.assignee);
+  return plain(names);
+}
+
+function applyFilters(next) {
+  state.filters = next;
+  closeColumnMenu();
+  refresh();
+}
+
+function closeColumnMenu() {
+  const menu = byId("columnMenu");
+  if (menu) menu.remove();
+}
+
+function openColumnMenu(fieldId, anchor) {
+  const reopening = byId("columnMenu") && byId("columnMenu").dataset.field === fieldId;
+  closeColumnMenu();
+  if (reopening) return;
+  const field = FILTER_FIELDS.find((entry) => entry.id === fieldId);
+  const options = filterValues(fieldId);
+  const menu = document.createElement("div");
+  menu.id = "columnMenu";
+  menu.className = "column-menu";
+  menu.dataset.field = fieldId;
+  menu.setAttribute("role", "menu");
+  menu.innerHTML = `<div class="column-menu-title">Filter ${escapeHtml(field.label)}</div>` +
+    options.map((option) => `<button type="button" role="menuitemcheckbox" class="column-menu-item" aria-checked="${state.filters[fieldId] === option.value}" data-value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</button>`).join("") +
+    (options.length ? "" : `<div class="column-menu-empty">Nothing to choose</div>`) +
+    (fieldId === "status" ? `<button type="button" role="menuitemcheckbox" class="column-menu-item" aria-checked="${state.filters.open}" data-toggle-open="1">Hide done</button>` : "");
+  document.body.appendChild(menu);
+  const rect = anchor.getBoundingClientRect();
+  menu.style.left = `${Math.max(8, Math.min(rect.left, window.innerWidth - menu.offsetWidth - 8))}px`;
+  menu.style.top = `${rect.bottom + 4}px`;
+  menu.addEventListener("click", (event) => {
+    const item = event.target.closest("button");
+    if (!item) return;
+    applyFilters(item.dataset.toggleOpen ? toggledFilter(state.filters, "open") : toggledFilter(state.filters, fieldId, item.dataset.value));
+  });
+}
+
+function renderFilterBar() {
+  const onTickets = state.page === "tickets";
+  const active = onTickets ? activeFilters(state.filters) : [];
+  const activeChips = active.map((entry) => `<span class="filter-chip active"><button type="button" class="chip-body" ${entry.id === "open" ? 'data-filter-toggle="1"' : `data-filter-open="${entry.id}"`}>${escapeHtml(entry.value ? `${entry.label}: ${entry.value}` : entry.label)}</button><button type="button" class="chip-clear" data-filter-clear="${entry.id}" aria-label="Clear ${escapeHtml(entry.label)}">\u00D7</button></span>`);
+  const offered = onTickets && state.view === "board"
+    ? [...FILTER_FIELDS.filter((field) => !state.filters[field.id]).map((field) => `<button type="button" class="filter-chip" data-filter-open="${field.id}">${field.label} \u25BE</button>`),
+      ...(state.filters.open ? [] : [`<button type="button" class="filter-chip" data-filter-toggle="1">Hide done</button>`])]
+    : [];
+  const clearAll = active.length > 1 ? [`<button type="button" class="ghost" data-filter-clear="all">Clear all</button>`] : [];
+  byId("filterChips").innerHTML = [...activeChips, ...offered, ...clearAll].join("");
 }
 
 function openCount(project) {
@@ -398,7 +443,7 @@ function renderHeader() {
   }));
   const listing = ["tickets", "board"].includes(state.page) && ["board", "list"].includes(state.view);
   byId("filters").hidden = !listing;
-  document.querySelectorAll(".filter-controls").forEach((group) => { group.hidden = state.page !== "tickets"; });
+  renderFilterBar();
   byId("sortField").value = state.sort.field;
   const direction = byId("sortDirection");
   direction.hidden = !state.sort.field;
@@ -431,10 +476,24 @@ function setSort(sort) {
   render();
 }
 
-function sortHeaderHtml(field) {
-  const active = state.sort.field === field.id;
-  const arrow = active ? (state.sort.direction === "asc" ? " ▲" : " ▼") : "";
-  return `<th aria-sort="${active ? (state.sort.direction === "asc" ? "ascending" : "descending") : "none"}"><button type="button" class="sort-header" data-sort="${field.id}">${field.label}${arrow}</button></th>`;
+const COLUMN_FILTERS = { status: "status", priority: "priority", type: "type", assignee: "assignee" };
+
+function listColumns() {
+  const columns = SORT_FIELDS.map((field) => ({ ...field, sortable: true, filter: state.page === "tickets" ? COLUMN_FILTERS[field.id] || "" : "" }));
+  if (state.page === "tickets") columns.splice(columns.findIndex((column) => column.id === "estimate"), 0, { id: "labels", label: "Tags", sortable: false, filter: "label" });
+  return columns;
+}
+
+function columnHeaderHtml(column) {
+  const sorted = column.sortable && state.sort.field === column.id;
+  const arrow = sorted ? (state.sort.direction === "asc" ? " \u25B2" : " \u25BC") : "";
+  const filtered = column.filter && state.filters[column.filter];
+  const label = column.sortable
+    ? `<button type="button" class="sort-header" data-sort="${column.id}">${column.label}${arrow}</button>`
+    : `<button type="button" class="sort-header" data-filter-open="${column.filter}">${column.label}</button>`;
+  const caret = column.sortable && column.filter
+    ? `<button type="button" class="filter-caret${filtered ? " on" : ""}" data-filter-open="${column.filter}" aria-label="Filter ${column.label}" title="Filter ${column.label}">${filtered ? "\u25CF" : "\u25BE"}</button>` : "";
+  return `<th aria-sort="${sorted ? (state.sort.direction === "asc" ? "ascending" : "descending") : "none"}">${label}${caret}</th>`;
 }
 
 function renderBoard(tickets = state.tickets, statuses = state.meta.statuses) {
@@ -449,15 +508,16 @@ function renderBoard(tickets = state.tickets, statuses = state.meta.statuses) {
 
 function renderList(tickets = state.tickets) {
   if (!tickets.length) { byId("main").innerHTML = `<div class="empty"><p>No tickets match. Press c to create one.</p></div>`; return; }
-  byId("main").innerHTML = `<table class="list"><thead><tr>${SORT_FIELDS.map(sortHeaderHtml).join("")}</tr></thead><tbody>
+  byId("main").innerHTML = `<table class="list"><thead><tr>${listColumns().map(columnHeaderHtml).join("")}</tr></thead><tbody>
     ${orderedTickets(tickets).map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)}</td>
       <td><span class="pill" style="--pill-color:${statusColor(t.status)}">${STATUS_LABELS[t.status]}</span></td>
       <td><span class="pill" style="--pill-color:${priorityColor(t.priority)}">${icon("priority", t.priority)} ${PRIORITY_MARKS[t.priority]} ${t.priority}</span></td>
-      <td>${icon("type", t.type)} ${t.type}</td><td>${escapeHtml(t.assignee)}</td><td>${t.estimate === null || t.estimate === undefined ? "" : formatNumber(t.estimate)}</td>
+      <td>${icon("type", t.type)} ${t.type}</td><td>${escapeHtml(t.assignee)}</td>${state.page === "tickets" ? `<td>${t.labels.slice(0, 3).map((l) => `<span class="chip tint" style="--tint:${tagColor(l)}">${escapeHtml(l)}</span>`).join(" ")}</td>` : ""}<td>${t.estimate === null || t.estimate === undefined ? "" : formatNumber(t.estimate)}</td>
       <td>${new Date(t.updated * 1000).toLocaleDateString()}</td></tr>`).join("")}
     </tbody></table>`;
   byId("main").querySelectorAll("tr[data-key]").forEach((row) => activateOnKey(row, () => openTicket(row.dataset.key)));
-  byId("main").querySelectorAll(".sort-header").forEach((button) => button.addEventListener("click", () => setSort(nextSort(state.sort, button.dataset.sort))));
+  byId("main").querySelectorAll(".sort-header[data-sort]").forEach((button) => button.addEventListener("click", () => setSort(nextSort(state.sort, button.dataset.sort))));
+  byId("main").querySelectorAll("[data-filter-open]").forEach((button) => button.addEventListener("click", () => openColumnMenu(button.dataset.filterOpen, button)));
 }
 
 function barCard(title, counts, colorOf, labelOf = (v) => v) {
@@ -767,18 +827,20 @@ function anyDialogOpen() { return [...document.querySelectorAll("dialog")].some(
 function isTyping() { return /^(INPUT|TEXTAREA|SELECT)$/.test(document.activeElement.tagName) || document.activeElement.isContentEditable; }
 
 function setupControls() {
-  ["filterAssignee", "filterType", "filterPriority", "filterLabel", "filterOpen"].forEach((id) => byId(id).addEventListener("change", refresh));
+  byId("filterChips").addEventListener("click", (event) => {
+    const target = event.target.closest("button");
+    if (!target) return;
+    if (target.dataset.filterOpen) openColumnMenu(target.dataset.filterOpen, target);
+    else if (target.dataset.filterToggle) applyFilters(toggledFilter(state.filters, "open"));
+    else if (target.dataset.filterClear === "all") applyFilters(emptyFilters());
+    else if (target.dataset.filterClear) applyFilters(clearedFilter(state.filters, target.dataset.filterClear));
+  });
+  document.addEventListener("click", (event) => { if (!event.target.closest("#columnMenu, [data-filter-open]")) closeColumnMenu(); });
+  document.addEventListener("keydown", (event) => { if (event.key === "Escape") closeColumnMenu(); });
   byId("sortField").addEventListener("change", (event) => setSort(event.target.value ? { field: event.target.value, direction: defaultSortDirection(event.target.value) } : { field: "", direction: "asc" }));
   byId("sortDirection").addEventListener("click", () => setSort({ field: state.sort.field, direction: state.sort.direction === "asc" ? "desc" : "asc" }));
   byId("searchBox").addEventListener("input", () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(() => { if (state.page !== "tickets") state.page = "tickets"; if (!["board", "list"].includes(state.view)) state.view = "list"; refresh(); }, SEARCH_DEBOUNCE_MS); });
   byId("navFilter").addEventListener("input", (event) => { state.navFilter = event.target.value.trim(); renderNav(); });
-  byId("clearFilters").addEventListener("click", () => {
-    ["filterAssignee", "filterType", "filterPriority", "filterLabel"].forEach((id) => { byId(id).value = ""; });
-    byId("filterOpen").checked = false;
-    byId("searchBox").value = "";
-    state.nav = "all";
-    refresh();
-  });
   byId("newButton").addEventListener("click", () => openNewDialog());
   byId("refreshButton").addEventListener("click", () => refresh());
   byId("helpButton").addEventListener("click", () => byId("helpDialog").showModal());
@@ -827,8 +889,6 @@ async function start() {
     if (savedSort && SORT_FIELDS.some((field) => field.id === savedSort.field)) state.sort = { field: savedSort.field, direction: savedSort.direction === "desc" ? "desc" : "asc" };
   } catch (_) { state.sort = { field: "", direction: "asc" }; }
   state.meta = await api("GET", "/api/meta");
-  fillSelect(byId("filterType"), state.meta.types, (v) => v, "Any");
-  fillSelect(byId("filterPriority"), state.meta.priorities, (v) => v, "Any");
   fillSelect(byId("sortField"), SORT_FIELDS.map((field) => field.id), (id) => SORT_FIELDS.find((field) => field.id === id).label, "Default");
   fillSelect(byId("newType"), state.meta.types);
   fillSelect(byId("newPriority"), state.meta.priorities);

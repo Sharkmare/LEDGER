@@ -53,18 +53,9 @@
     </div>
 
     <div class="filters" id="filters">
-      <span class="filter-controls">
-      <label>Assignee <select id="filterAssignee"><option value="">Anyone</option></select></label>
-      <label>Type <select id="filterType"><option value="">Any</option></select></label>
-      <label>Priority <select id="filterPriority"><option value="">Any</option></select></label>
-      <label>Tag <select id="filterLabel"><option value="">Any</option></select></label>
-      </span>
+      <span id="filterChips" class="filter-chips"></span>
       <label>Sort <select id="sortField"><option value="">Default</option></select></label>
       <button id="sortDirection" class="ghost" type="button" title="Reverse the sort" hidden></button>
-      <span class="filter-controls">
-      <label class="check"><input id="filterOpen" type="checkbox"> Hide done</label>
-      <button id="clearFilters" class="ghost">Clear</button>
-      </span>
       <span id="summary" class="summary" aria-live="polite"></span>
     </div>
 
@@ -147,6 +138,7 @@
 <script src="/static/manage.js"></script>
 <script src="/static/markdown.js"></script>
 <script src="/static/sorting.js"></script>
+<script src="/static/filtering.js"></script>
 <script src="/static/openapi-view.js"></script>
 <script src="/static/kb.js"></script>
 <script src="/static/ledger.js"></script>
