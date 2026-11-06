@@ -14,7 +14,7 @@ DEFAULT_BASE = "http://127.0.0.1:6680"
 REQUEST_TIMEOUT_SECONDS = 15
 LIST_FILTERS = ("project", "status", "assignee", "type", "priority", "label", "source", "area", "iteration")
 EDIT_FIELDS = ("title", "body", "type", "priority", "assignee", "labels", "due", "status", "start", "estimate", "area", "iteration")
-PLANNING_COMMANDS = ("overview", "tree", "plan", "roadmap", "project-set", "area", "board", "iteration", "tag", "template", "dashboard", "metric",
+PLANNING_COMMANDS = ("overview", "tree", "plan", "roadmap", "project-set", "question", "area", "board", "iteration", "tag", "template", "dashboard", "metric",
                      "kb-space", "kb-page", "kb-tool", "kb-search", "find")
 
 
@@ -55,7 +55,8 @@ def when(stamp: float) -> str:
 def ticket_line(ticket: dict) -> str:
     assignee = f" @{ticket['assignee']}" if ticket["assignee"] else ""
     labels = f" [{','.join(ticket['labels'])}]" if ticket["labels"] else ""
-    return f"{ticket['key']:<9} {ticket['status']:<11} {ticket['priority']:<8} {ticket['type']:<8} {ticket['title']}{assignee}{labels}"
+    questions = f" ?{ticket['open_questions']}" if ticket.get("open_questions") else ""
+    return f"{ticket['key']:<9} {ticket['status']:<11} {ticket['priority']:<8} {ticket['type']:<8} {ticket['title']}{assignee}{labels}{questions}"
 
 
 def print_ticket(ticket: dict, events: list | None = None) -> None:
@@ -81,11 +82,21 @@ def print_ticket(ticket: dict, events: list | None = None) -> None:
         print(f"  sub {child['key']} {child['status']} {child['title']}")
     for link in ticket.get("links", []):
         print(f"  {link['direction']} {link['kind']} {link['key']} {link['status']} {link['title']}")
+    for question in ticket.get("questions", []):
+        print("\n  " + question_text(question))
     for comment in ticket.get("comments", []):
         print(f"\n  [{comment['author']} {when(comment['created'])}] {comment['body']}")
     if events:
         print("\nhistory")
         print_events(events)
+
+
+def question_text(question: dict) -> str:
+    asked = f"{question['asker']} {when(question['created'])}"
+    if question["answered"] is None:
+        return f"question {question['id']} open [{asked}] {question['text']}"
+    return (f"question {question['id']} answered [{asked}] {question['text']}\n"
+            f"    answer [{question['answerer']} {when(question['answered'])}] {question['answer']}")
 
 
 def print_events(events: list) -> None:
@@ -127,12 +138,14 @@ def add_ticket_commands(commands) -> None:
     add.add_argument("--iteration", help="iteration id or name")
     add.add_argument("--template", help="template id; its values fill every field you leave out")
     add.add_argument("--source", help="stable external id; a second add with the same source is refused")
+    add.add_argument("--question", action="append", dest="questions", help="an open question to ask on the new ticket; repeat for more")
 
     list_command = commands.add_parser("list", help="list tickets")
     for name in LIST_FILTERS:
         list_command.add_argument(f"--{name}")
     list_command.add_argument("-q", "--q", "--text", dest="q", help="text in the title, description or key")
     list_command.add_argument("--open", action="store_true", help="hide done and cancelled")
+    list_command.add_argument("--questions", action="store_true", help="only tickets with an unanswered question")
     list_command.add_argument("--limit", type=int)
     commands.add_parser("mine", help="open tickets assigned to --as")
 
@@ -182,6 +195,20 @@ def add_planning_commands(commands) -> None:
     project_set.add_argument("key")
     for name in ("name", "description", "lead", "status", "start", "target", "tags"):
         project_set.add_argument(f"--{name}")
+
+    question = commands.add_parser("question", help="open questions on tickets").add_subparsers(dest="action", required=True)
+    question_ask = question.add_parser("ask", help="ask an open question on a ticket")
+    question_ask.add_argument("key")
+    question_ask.add_argument("text")
+    question_answer = question.add_parser("answer", help="answer an open question")
+    question_answer.add_argument("id")
+    question_answer.add_argument("text")
+    question_list = question.add_parser("list", help="list questions, open ones by default")
+    question_list.add_argument("key", nargs="?", help="only this ticket")
+    question_list.add_argument("--project")
+    question_list.add_argument("--state", choices=("open", "answered", "all"), default="open")
+    question.add_parser("reopen", help="reopen an answered question").add_argument("id")
+    question.add_parser("rm", help="remove a question and its answer").add_argument("id")
 
     area = commands.add_parser("area", help="areas group boards").add_subparsers(dest="action", required=True)
     area.add_parser("list")
@@ -363,6 +390,7 @@ def list_path(arguments: argparse.Namespace) -> str:
     if arguments.command == "mine":
         parameters["assignee"] = arguments.actor
     parameters["open"] = "1" if arguments.command == "mine" or getattr(arguments, "open", False) else None
+    parameters["questions"] = "open" if getattr(arguments, "questions", False) else None
     return "/api/tickets?" + urllib.parse.urlencode({key: value for key, value in parameters.items() if value})
 
 
@@ -389,7 +417,7 @@ def run_ticket_command(arguments: argparse.Namespace):
                     {"key": arguments.key, "name": arguments.name, "description": arguments.description, "tags": arguments.tags})
     if command == "add":
         fields = ("project", "title", "body", "type", "status", "priority", "assignee", "labels", "parent", "due", "start", "estimate", "area",
-                  "iteration", "template", "source")
+                  "iteration", "template", "source", "questions")
         return call(base, "POST", "/api/tickets", actor, drop_empty({name: getattr(arguments, name) for name in fields}))
     if command in ("list", "mine"):
         return call(base, "GET", list_path(arguments), actor)
@@ -426,6 +454,19 @@ def run_ticket_command(arguments: argparse.Namespace):
 
 def quoted(value: str) -> str:
     return urllib.parse.quote(str(value), safe="")
+
+
+def run_question(arguments, base, actor):
+    if arguments.action == "ask":
+        return call(base, "POST", f"/api/tickets/{arguments.key}/questions", actor, {"text": arguments.text})
+    if arguments.action == "answer":
+        return call(base, "POST", f"/api/questions/{arguments.id}/answer", actor, {"answer": arguments.text})
+    if arguments.action == "list":
+        parameters = {"state": arguments.state, "project": arguments.project, "ticket": arguments.key}
+        return call(base, "GET", "/api/questions?" + urllib.parse.urlencode({key: value for key, value in parameters.items() if value}), actor)
+    if arguments.action == "reopen":
+        return call(base, "POST", f"/api/questions/{arguments.id}/reopen", actor)
+    return call(base, "DELETE", f"/api/questions/{arguments.id}", actor)
 
 
 def run_area(arguments, base, actor):
@@ -736,7 +777,7 @@ def run_planning_command(arguments: argparse.Namespace):
         if not changes:
             raise SystemExit("ledger: project-set needs at least one field, for example --lead ann")
         return call(base, "PATCH", f"/api/projects/{arguments.key}", actor, changes)
-    runners = {"area": run_area, "board": run_board, "iteration": run_iteration, "tag": run_tag, "template": run_template,
+    runners = {"question": run_question, "area": run_area, "board": run_board, "iteration": run_iteration, "tag": run_tag, "template": run_template,
                "dashboard": run_dashboard, "metric": run_metric}
     return runners[command](arguments, base, actor)
 
@@ -804,6 +845,12 @@ def render_planning(arguments: argparse.Namespace, result) -> None:
     elif command == "board" and action == "list":
         for board in result:
             print(f"{board['id']:<4} {board['area']} / {board['name']}  {board['tickets']} tickets  {json.dumps(board['rules'])}")
+    elif command == "question" and action == "list":
+        for question in result:
+            print(f"{question['ticket_key']:<9} {question_text(question)}")
+        print(f"{len(result)} questions")
+    elif command == "question":
+        print_ticket(result)
     elif command == "area" and action == "list":
         for area in result:
             print(f"{area['id']:<4} {'  ' * area['depth']}{area['name']}  {area['open_tickets']} open, {area['boards']} boards")

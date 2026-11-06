@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .web import App, HTTPError, abort, g, jsonify, request, send_from_directory
 
-from . import kb, manage, metrics, openapi, organise, store
+from . import kb, manage, metrics, openapi, organise, questions, store
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 6680
@@ -30,6 +30,9 @@ API_HELP = {
         "POST /api/tickets {project,title,body,type,status,priority,assignee,labels,parent,due,source}",
         "GET  /api/tickets/<KEY-N> | PATCH {field: value} | DELETE",
         "POST /api/tickets/<KEY-N>/comments {body}",
+        "POST /api/tickets/<KEY-N>/questions {text}",
+        "GET  /api/questions?state=open|answered|all&project=&ticket=",
+        "POST /api/questions/<ID>/answer {answer} | /reopen | DELETE",
         "POST /api/tickets/<KEY-N>/links {to,kind}",
         "GET  /api/tickets/<KEY-N>/events",
         "GET  /api/board?project=",
@@ -161,7 +164,7 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
             project_key=arguments.get("project"), status=arguments.get("status"), assignee=arguments.get("assignee"),
             type=arguments.get("type"), priority=arguments.get("priority"), label=arguments.get("label"),
             query=arguments.get("q"), source=arguments.get("source"), area=arguments.get("area"), iteration=arguments.get("iteration"),
-            include_closed=arguments.get("open") not in ("1", "true"))
+            include_closed=arguments.get("open") not in ("1", "true"), has_open_questions=arguments.get("questions") == "open")
         response = jsonify(store.list_tickets(connection, limit=limit, **filters))
         response.headers[TOTAL_HEADER] = str(store.count_tickets(connection, **filters))
         return response
@@ -171,6 +174,7 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
         payload = body_json()
         if payload.get("template") not in (None, ""):
             payload = manage.apply_template(connection, payload["template"], payload)
+        pending_questions = questions.clean_list(payload.get("questions"))
         created = store.create_ticket(
             connection, payload.get("project", ""), payload.get("title", ""), body=payload.get("body", ""),
             type=payload.get("type", "task"), status=payload.get("status", "backlog"),
@@ -178,6 +182,8 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
             labels=payload.get("labels"), parent_key=payload.get("parent"), due=payload.get("due", ""),
             source=payload.get("source"), actor=actor(), start=payload.get("start", ""), estimate=payload.get("estimate"),
             area=payload.get("area"), iteration=payload.get("iteration"))
+        for text in pending_questions:
+            created = questions.ask(connection, created["key"], actor(), text)
         return jsonify(created), 201
 
     @app.get("/api/tickets/<ticket_key>")
@@ -198,6 +204,27 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
     @app.post("/api/tickets/<ticket_key>/comments")
     def comment(ticket_key):
         return jsonify(store.add_comment(connection, ticket_key, actor(), body_json().get("body", ""))), 201
+
+    @app.post("/api/tickets/<ticket_key>/questions")
+    def ask_question(ticket_key):
+        return jsonify(questions.ask(connection, ticket_key, actor(), body_json().get("text", ""))), 201
+
+    @app.get("/api/questions")
+    def question_list():
+        arguments = request.args
+        return jsonify(questions.list_questions(connection, arguments.get("state", "open"), arguments.get("project"), arguments.get("ticket")))
+
+    @app.post("/api/questions/<question_id>/answer")
+    def answer_question(question_id):
+        return jsonify(questions.answer(connection, question_id, actor(), body_json().get("answer", "")))
+
+    @app.post("/api/questions/<question_id>/reopen")
+    def reopen_question(question_id):
+        return jsonify(questions.reopen(connection, question_id, actor()))
+
+    @app.delete("/api/questions/<question_id>")
+    def remove_question(question_id):
+        return jsonify(questions.remove(connection, question_id, actor()))
 
     @app.post("/api/tickets/<ticket_key>/links")
     def link(ticket_key):

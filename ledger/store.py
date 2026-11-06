@@ -193,6 +193,16 @@ CREATE TABLE IF NOT EXISTS comments (
     body TEXT NOT NULL,
     created REAL NOT NULL
 );
+CREATE TABLE IF NOT EXISTS questions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ticket_id INTEGER NOT NULL REFERENCES tickets(id),
+    text TEXT NOT NULL,
+    asker TEXT NOT NULL,
+    created REAL NOT NULL,
+    answer TEXT NOT NULL DEFAULT '',
+    answerer TEXT NOT NULL DEFAULT '',
+    answered REAL
+);
 CREATE TABLE IF NOT EXISTS events (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     ticket_id INTEGER NOT NULL REFERENCES tickets(id),
@@ -210,6 +220,7 @@ CREATE TABLE IF NOT EXISTS links (
 );
 CREATE INDEX IF NOT EXISTS tickets_status ON tickets(project_key, status);
 CREATE INDEX IF NOT EXISTS comments_ticket ON comments(ticket_id);
+CREATE INDEX IF NOT EXISTS questions_ticket ON questions(ticket_id, answered);
 CREATE INDEX IF NOT EXISTS events_ticket ON events(ticket_id);
 """
 
@@ -517,6 +528,7 @@ def _row_to_ticket(connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
     ticket["area"] = _area_path(connection, row["area_id"])
     iteration = connection.execute("SELECT name FROM iterations WHERE id = ?", (row["iteration_id"],)).fetchone() if row["iteration_id"] else None
     ticket["iteration"] = iteration["name"] if iteration else ""
+    ticket["open_questions"] = connection.execute("SELECT COUNT(*) FROM questions WHERE ticket_id = ? AND answered IS NULL", (row["id"],)).fetchone()[0]
     return ticket
 
 
@@ -605,6 +617,8 @@ def get_ticket(connection: sqlite3.Connection, ticket_key: str) -> dict:
     ticket = _row_to_ticket(connection, row)
     ticket["comments"] = [dict(entry) for entry in connection.execute(
         "SELECT id, author, body, created FROM comments WHERE ticket_id = ? ORDER BY id", (row["id"],))]
+    ticket["questions"] = [dict(entry) for entry in connection.execute(
+        "SELECT id, text, asker, created, answer, answerer, answered FROM questions WHERE ticket_id = ? ORDER BY id", (row["id"],))]
     ticket["children"] = [
         {"key": _ticket_key_of(child), "title": child["title"], "status": child["status"]}
         for child in connection.execute("SELECT * FROM tickets WHERE parent_id = ? ORDER BY number", (row["id"],))
@@ -733,7 +747,7 @@ def delete_ticket(connection: sqlite3.Connection, ticket_key: str) -> None:
     row = _find_row(connection, ticket_key)
     if connection.execute("SELECT 1 FROM tickets WHERE parent_id = ?", (row["id"],)).fetchone():
         raise LedgerError("ticket has sub-tickets; move or delete them first")
-    for table, column in (("comments", "ticket_id"), ("events", "ticket_id"), ("links", "ticket_id"), ("links", "other_id"),
+    for table, column in (("comments", "ticket_id"), ("questions", "ticket_id"), ("events", "ticket_id"), ("links", "ticket_id"), ("links", "other_id"),
                           ("board_items", "ticket_id")):
         connection.execute(f"DELETE FROM {table} WHERE {column} = ?", (row["id"],))
     connection.execute("DELETE FROM tickets WHERE id = ?", (row["id"],))
@@ -778,7 +792,7 @@ def _escape_like(text: str) -> str:
 
 
 def _filter_clause(project_key, status, assignee, type, priority, label, query, include_closed, source=None, area=None,
-                   iteration=None, connection=None) -> tuple[str, list]:
+                   iteration=None, connection=None, has_open_questions=False) -> tuple[str, list]:
     clauses, parameters = [], []
     if project_key:
         clauses.append("project_key = ?")
@@ -804,6 +818,8 @@ def _filter_clause(project_key, status, assignee, type, priority, label, query, 
         parameters.append(assignee)
     if not include_closed:
         clauses.append("closed IS NULL")
+    if has_open_questions:
+        clauses.append("EXISTS (SELECT 1 FROM questions WHERE questions.ticket_id = tickets.id AND questions.answered IS NULL)")
     if query:
         like = f"%{_escape_like(query)}%"
         clauses.append(f"(title LIKE ? ESCAPE '{LIKE_ESCAPE}' OR body LIKE ? ESCAPE '{LIKE_ESCAPE}' OR (project_key || '-' || number) LIKE ? ESCAPE '{LIKE_ESCAPE}')")
@@ -820,10 +836,10 @@ def _check_project_exists(connection: sqlite3.Connection, project_key: str | Non
 
 
 def count_tickets(connection: sqlite3.Connection, project_key=None, status=None, assignee=None, type=None, priority=None,
-                  label=None, query=None, include_closed=True, source=None, area=None, iteration=None) -> int:
+                  label=None, query=None, include_closed=True, source=None, area=None, iteration=None, has_open_questions=False) -> int:
     _check_project_exists(connection, project_key)
     where, parameters = _filter_clause(project_key, status, assignee, type, priority, label, query, include_closed, source,
-                                       area, iteration, connection)
+                                       area, iteration, connection, has_open_questions)
     return connection.execute(f"SELECT COUNT(*) FROM tickets {where}", parameters).fetchone()[0]
 
 
@@ -841,10 +857,11 @@ def list_tickets(
     source: str | None = None,
     area: Any = None,
     iteration: Any = None,
+    has_open_questions: bool = False,
 ) -> list[dict]:
     _check_project_exists(connection, project_key)
     where, parameters = _filter_clause(project_key, status, assignee, type, priority, label, query, include_closed, source,
-                                       area, iteration, connection)
+                                       area, iteration, connection, has_open_questions)
     priority_order = "CASE priority " + " ".join(f"WHEN '{name}' THEN {index + 1}" for index, name in enumerate(PRIORITIES)) + " END"
     rows = connection.execute(
         f"SELECT * FROM tickets {where} ORDER BY {priority_order} DESC, updated DESC LIMIT ?", (*parameters, limit)

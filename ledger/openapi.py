@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from . import kb, metrics, store
+from . import kb, metrics, questions, store
 
 API_VERSION = "1.1.0"
 KEY_EXAMPLE = "APP-1"
@@ -23,6 +23,10 @@ def json_response(description: str, schema: dict, headers: dict | None = None) -
 
 def query(name: str, description: str, schema: dict | None = None) -> dict:
     return {"name": name, "in": "query", "required": False, "description": description, "schema": schema or {"type": "string"}}
+
+
+def question_parameter() -> dict:
+    return {"name": "question_id", "in": "path", "required": True, "description": "Question id", "schema": {"type": "integer", "example": 7}}
 
 
 def key_parameter() -> dict:
@@ -57,6 +61,7 @@ def schemas() -> dict:
         "closed": {"type": "number", "nullable": True, "description": "Unix time, null while open"},
         "start": {"type": "string", "description": "YYYY-MM-DD or empty"},
         "estimate": {"type": "number", "nullable": True, "description": "Story points or hours, your choice"},
+        "open_questions": {"type": "integer", "description": "Questions on this ticket that nobody has answered yet"},
         "area_id": {"type": "integer", "nullable": True}, "area": {"type": "string", "description": "Area path such as Platform / Tools"},
         "iteration_id": {"type": "integer", "nullable": True}, "iteration": {"type": "string"},
     }
@@ -74,6 +79,7 @@ def schemas() -> dict:
             "tags": {"type": "string", "description": "Comma separated project tags", "example": "games,tools"}}},
         "Ticket": {"type": "object", "properties": {**ticket_properties,
             "comments": {"type": "array", "items": ref("Comment")},
+            "questions": {"type": "array", "items": ref("Question")},
             "children": {"type": "array", "items": {"type": "object", "properties": {
                 "key": {"type": "string"}, "title": {"type": "string"}, "status": {"type": "string"}}}},
             "links": {"type": "array", "items": ref("Link")},
@@ -94,7 +100,8 @@ def schemas() -> dict:
             "source": {"type": "string", "description": "Stable external id; a second ticket with the same value is refused"},
             "start": {"type": "string"}, "estimate": {"type": "number"},
             "area": {"type": "string", "description": "Area id or path"}, "iteration": {"type": "string", "description": "Iteration id or name"},
-            "template": {"type": "integer", "description": "Template id; its values fill every field you leave out"}}},
+            "template": {"type": "integer", "description": "Template id; its values fill every field you leave out"},
+            "questions": {"type": "array", "items": {"type": "string"}, "description": "Open questions to ask on the new ticket"}}},
         "TicketPatch": {"type": "object", "description": "Any subset of the editable fields",
             "properties": {
                 "title": {"type": "string"}, "body": {"type": "string"},
@@ -108,6 +115,18 @@ def schemas() -> dict:
                 "iteration": {"type": "string", "description": "Iteration id or name, empty clears it"}}},
         "Comment": {"type": "object", "properties": {
             "id": {"type": "integer"}, "author": {"type": "string"}, "body": {"type": "string"}, "created": {"type": "number"}}},
+        "Question": {"type": "object", "properties": {
+            "id": {"type": "integer"}, "text": {"type": "string", "maxLength": questions.MAX_QUESTION_CHARS, "example": "Which payment provider do we use?"},
+            "asker": {"type": "string"}, "created": {"type": "number", "description": "Unix time"},
+            "answer": {"type": "string", "description": "Empty while the question is open"}, "answerer": {"type": "string"},
+            "answered": {"type": "number", "nullable": True, "description": "Unix time, null while the question is open"}}},
+        "QuestionListing": {"type": "object", "properties": {
+            "id": {"type": "integer"}, "ticket_key": {"type": "string", "example": KEY_EXAMPLE}, "ticket_title": {"type": "string"},
+            "ticket_status": {"type": "string", "enum": list(store.STATUSES)}, "text": {"type": "string"}, "asker": {"type": "string"},
+            "created": {"type": "number"}, "answer": {"type": "string"}, "answerer": {"type": "string"},
+            "answered": {"type": "number", "nullable": True}}},
+        "NewQuestion": {"type": "object", "required": ["text"], "properties": {"text": {"type": "string", "maxLength": questions.MAX_QUESTION_CHARS}}},
+        "NewAnswer": {"type": "object", "required": ["answer"], "properties": {"answer": {"type": "string", "maxLength": questions.MAX_ANSWER_CHARS}}},
         "NewComment": {"type": "object", "required": ["body"], "properties": {"body": {"type": "string", "example": "Reproduced on a clean install"}}},
         "Link": {"type": "object", "properties": {
             "kind": {"type": "string", "enum": list(store.LINK_KINDS)}, "key": {"type": "string"}, "title": {"type": "string"},
@@ -165,6 +184,7 @@ def paths() -> dict:
                     query("area", "Area id or path; includes sub-areas"),
                     query("iteration", "Iteration id"),
                     query("open", "Set to 1 to hide done and cancelled tickets", {"type": "string", "enum": ["1"]}),
+                    query("questions", "Set to open to keep only tickets with an unanswered question", {"type": "string", "enum": ["open"]}),
                     query("limit", "Maximum tickets returned", {"type": "integer", "default": 500, "maximum": 5000})],
                 "responses": {"200": json_response("Matching tickets", {"type": "array", "items": ref("TicketSummary")}, total_header),
                               "400": ERRORS["400"], "404": ERRORS["404"]}},
@@ -186,6 +206,29 @@ def paths() -> dict:
             "post": {"tags": ["Tickets"], "summary": "Add a comment", "operationId": "addComment",
                 "parameters": [key_parameter()], "requestBody": json_body(ref("NewComment")),
                 "responses": {"201": json_response("The ticket with its comments", ref("Ticket")), "400": ERRORS["400"], "404": ERRORS["404"]}}},
+        "/api/tickets/{ticket_key}/questions": {
+            "post": {"tags": ["Questions"], "summary": "Ask an open question on a ticket", "operationId": "askQuestion",
+                "parameters": [key_parameter()], "requestBody": json_body(ref("NewQuestion")),
+                "responses": {"201": json_response("The ticket with its questions", ref("Ticket")), "400": ERRORS["400"], "404": ERRORS["404"]}}},
+        "/api/questions": {
+            "get": {"tags": ["Questions"], "summary": "List questions across tickets, oldest first", "operationId": "listQuestions",
+                "parameters": [
+                    query("state", "open (default), answered or all", {"type": "string", "enum": list(questions.QUESTION_STATES), "default": "open"}),
+                    project_filter, query("ticket", "One ticket key")],
+                "responses": {"200": json_response("Matching questions", {"type": "array", "items": ref("QuestionListing")}),
+                              "400": ERRORS["400"], "404": ERRORS["404"]}}},
+        "/api/questions/{question_id}/answer": {
+            "post": {"tags": ["Questions"], "summary": "Answer an open question; the answer is written to the ticket history", "operationId": "answerQuestion",
+                "parameters": [question_parameter()], "requestBody": json_body(ref("NewAnswer")),
+                "responses": {"200": json_response("The ticket with its questions", ref("Ticket")), "400": ERRORS["400"], "404": ERRORS["404"]}}},
+        "/api/questions/{question_id}/reopen": {
+            "post": {"tags": ["Questions"], "summary": "Reopen an answered question and clear its answer", "operationId": "reopenQuestion",
+                "parameters": [question_parameter()],
+                "responses": {"200": json_response("The ticket with its questions", ref("Ticket")), "400": ERRORS["400"], "404": ERRORS["404"]}}},
+        "/api/questions/{question_id}": {
+            "delete": {"tags": ["Questions"], "summary": "Remove a question and its answer", "operationId": "removeQuestion",
+                "parameters": [question_parameter()],
+                "responses": {"200": json_response("The ticket with its questions", ref("Ticket")), "400": ERRORS["400"], "404": ERRORS["404"]}}},
         "/api/tickets/{ticket_key}/links": {
             "post": {"tags": ["Tickets"], "summary": "Link this ticket to another", "operationId": "addLink",
                 "parameters": [key_parameter()], "requestBody": json_body(ref("NewLink")),
@@ -546,7 +589,7 @@ def build_spec() -> dict:
         },
         "servers": [{"url": "/"}],
         "tags": [{"name": "Service"}, {"name": "Organisation"}, {"name": "Projects"}, {"name": "Areas"}, {"name": "Boards"},
-                 {"name": "Planning"}, {"name": "Tickets"}, {"name": "Tags"}, {"name": "Templates"}, {"name": "Reports"},
+                 {"name": "Planning"}, {"name": "Tickets"}, {"name": "Questions"}, {"name": "Tags"}, {"name": "Templates"}, {"name": "Reports"},
                  {"name": "Dashboards"}, {"name": "Metrics"}, {"name": "Knowledge"}, {"name": "Tools"}],
         "paths": {**paths(), **organisation_paths(), **dashboard_paths(), **kb_paths()},
         "components": {"schemas": {**schemas(), **organisation_schemas(), **dashboard_schemas(), **kb_schemas()}},

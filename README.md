@@ -29,7 +29,12 @@ Organisation
 Tickets             any type, with a parent and sub-tickets to any depth
 ```
 
-- **Tickets** have a title, description, type, status, priority, assignee, tags, parent, area, iteration, estimate, start and due date, links, comments and a history that records who changed what. Types: task, bug, feature, epic, story, spike, chore. Statuses: backlog, todo, in_progress, in_review, blocked, done, cancelled. An epic shows progress over everything under it.
+- **Tickets** have a title, description, type, status, priority, assignee, tags, parent, area, iteration, estimate, start and due date, links, comments, open questions and a history that records who changed what. Types: task, bug, feature, epic, story, spike, chore. Statuses: backlog, todo, in_progress, in_review, blocked, done, cancelled. An epic shows progress over everything under it.
+- **Open questions** are questions a ticket cannot move without. Ask one on the ticket (or when you create it); anyone can answer it in the
+  drawer, where each open question has its own answer box (Ctrl+Enter posts). An answered question keeps its answer, who gave it and when, and
+  can be reopened or removed. Asking, answering, reopening and removing are all written to the history. Tickets with an unanswered question show a
+  `? 2` badge on cards and in the list, and the Open questions item under Work lists only those tickets. Questions are separate from comments, so
+  an answer is never lost in a thread.
 - **Areas** hold boards. A ticket can sit in one area.
 - **Project and area tags** group projects and top-level areas in the navigator, one foldable heading per tag (an item with several tags is listed under each). List projects with `projects --tag NAME`, and break dashboards down with the `project_tag` grouping. These are separate from ticket tags (labels).
 - **Boards** belong to an area. A board holds the tickets of its area and sub-areas that match its rules, plus pinned tickets. Rules: scope (this area, or any area), project, types, priorities, tags, assignee, "under this ticket", iteration. A board can show a chosen set of status columns.
@@ -79,6 +84,11 @@ python ledger_cli.py mine
 python ledger_cli.py show APP-1
 python ledger_cli.py move APP-1 in_progress
 python ledger_cli.py done APP-1 --comment "Fixed in the next release"
+python ledger_cli.py add APP "Pick a payment provider" --question "Which provider?" --question "Refunds in v1?"
+python ledger_cli.py question ask APP-1 "Which currency first?"
+python ledger_cli.py question list --project APP
+python ledger_cli.py question answer 3 "Euro"
+python ledger_cli.py list --project APP --questions
 python ledger_cli.py tree APP-1
 
 python ledger_cli.py area add Platform --tags tools

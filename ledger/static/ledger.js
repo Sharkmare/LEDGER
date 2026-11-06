@@ -15,6 +15,7 @@ const VIEW_LABELS = { summary: "Summary", board: "Board", list: "List", plan: "P
 const WORK_ITEMS = [
   { id: "all", label: "All work", icon: "layers" }, { id: "mine", label: "Assigned to me", icon: "user" },
   { id: "open", label: "Open work", icon: "check" }, { id: "blocked", label: "Blocked", icon: "alert" },
+  { id: "questions", label: "Open questions", icon: "help" },
 ];
 const ICONS = {
   menu: '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>',
@@ -150,6 +151,7 @@ function currentFilters() {
     project: state.project,
     assignee: state.nav === "mine" ? actorName() : state.filters.assignee,
     status: state.nav === "blocked" ? "blocked" : state.filters.status,
+    questions: state.nav === "questions" ? "open" : "",
     type: state.filters.type, priority: state.filters.priority, label: state.filters.label,
     q: byId("searchBox").value.trim(), open: state.nav === "open" || state.filters.open ? "1" : "",
   };
@@ -477,7 +479,7 @@ function cardHtml(ticket) {
     <div class="title">${escapeHtml(ticket.title)}</div>
     <div class="meta">${icon("type", ticket.type)}<span class="key">${ticket.key}</span>
       <span class="chip tint" style="--tint:${priorityColor(ticket.priority)}" title="Priority ${ticket.priority}">${PRIORITY_MARKS[ticket.priority]} ${ticket.priority}</span>
-      <span class="chip tint" style="--tint:${typeColor(ticket.type)}">${escapeHtml(ticket.type)}</span>${labels}${estimate}${ticket.pinned ? `<span class="chip" title="Pinned to this board">pinned</span>` : ""}
+      <span class="chip tint" style="--tint:${typeColor(ticket.type)}">${escapeHtml(ticket.type)}</span>${labels}${estimate}${questionBadgeHtml(ticket.open_questions)}${ticket.pinned ? `<span class="chip" title="Pinned to this board">pinned</span>` : ""}
       ${ticket.assignee ? `<span class="avatar" style="--tint:${nameColor(ticket.assignee)}" title="${escapeHtml(ticket.assignee)}">${initials(ticket.assignee)}</span>` : ""}</div></div>`;
 }
 
@@ -529,7 +531,7 @@ function renderBoard(tickets = state.tickets, statuses = state.meta.statuses) {
 function renderList(tickets = state.tickets) {
   if (!tickets.length) { byId("main").innerHTML = `<div class="empty"><p>No tickets match. Press c to create one.</p></div>`; return; }
   byId("main").innerHTML = `<table class="list"><thead><tr>${listColumns().map(columnHeaderHtml).join("")}</tr></thead><tbody>
-    ${orderedTickets(tickets).map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)}</td>
+    ${orderedTickets(tickets).map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)} ${questionBadgeHtml(t.open_questions)}</td>
       <td><span class="pill" style="--pill-color:${statusColor(t.status)}">${STATUS_LABELS[t.status]}</span></td>
       <td><span class="pill" style="--pill-color:${priorityColor(t.priority)}">${icon("priority", t.priority)} ${PRIORITY_MARKS[t.priority]} ${t.priority}</span></td>
       <td>${icon("type", t.type)} ${t.type}</td><td>${escapeHtml(t.assignee)}</td>${state.page === "tickets" ? `<td>${t.labels.slice(0, 3).map((l) => `<span class="chip tint" style="--tint:${tagColor(l)}">${escapeHtml(l)}</span>`).join(" ")}</td>` : ""}<td>${t.estimate === null || t.estimate === undefined ? "" : formatNumber(t.estimate)}</td>
@@ -711,6 +713,7 @@ async function openTicket(key, scroll = true, skipIfUnchanged = false) {
     ${ticket.links.map((l) => `<div class="rowlink" tabindex="0" role="link" data-open="${l.key}"><span class="chip">${l.direction === "out" ? l.kind : "is " + l.kind + " by"}</span><span class="key">${l.key}</span><span>${escapeHtml(l.title)}</span></div>`).join("") || `<div class="event">none</div>`}
     <div class="inline"><input type="text" id="linkTarget" placeholder="APP-2" aria-label="Ticket to link">
       <select id="linkKind" aria-label="Link kind">${state.meta.link_kinds.map((k) => `<option>${k}</option>`).join("")}</select><button id="linkAdd">Link</button></div>
+    ${questionsHtml(ticket.questions, { escapeHtml, formatTime: (stamp) => new Date(stamp * 1000).toLocaleString() })}
     <h4>Comments</h4>
     ${ticket.comments.map((c) => `<div class="comment"><div class="who">${escapeHtml(c.author)}, ${new Date(c.created * 1000).toLocaleString()}</div>${escapeHtml(c.body)}</div>`).join("")}
     <textarea id="commentBox" rows="3" placeholder="Add a comment  (Ctrl+Enter to post)" aria-label="New comment"></textarea>
@@ -743,6 +746,26 @@ function wireDrawer(ticket) {
     if (body && await guarded(() => api("POST", `/api/tickets/${ticket.key}/comments`, { body }))) { toast("Comment added"); openTicket(ticket.key, false); refresh({ redrawDrawer: false }); }
   };
   byId("commentPost").addEventListener("click", postComment);
+  const questionChanged = (message) => { toast(message); openTicket(ticket.key, false); refresh({ redrawDrawer: false }); };
+  const askQuestion = async () => {
+    const text = byId("questionBox").value.trim();
+    if (text && await guarded(() => api("POST", `/api/tickets/${ticket.key}/questions`, { text }))) questionChanged("Question added");
+  };
+  const answerQuestion = async (id) => {
+    const answer = drawer.querySelector(`.answer-box[data-for="${id}"]`).value.trim();
+    if (answer && await guarded(() => api("POST", `/api/questions/${id}/answer`, { answer }))) questionChanged("Answered");
+  };
+  byId("questionAsk").addEventListener("click", askQuestion);
+  byId("questionBox").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); askQuestion(); } });
+  drawer.querySelectorAll("[data-answer]").forEach((button) => button.addEventListener("click", () => answerQuestion(button.dataset.answer)));
+  drawer.querySelectorAll(".answer-box").forEach((box) => box.addEventListener("keydown", (event) => { if (event.ctrlKey && event.key === "Enter") answerQuestion(box.dataset.for); }));
+  drawer.querySelectorAll("[data-question-reopen]").forEach((button) => button.addEventListener("click", async () => {
+    if (await guarded(() => api("POST", `/api/questions/${button.dataset.questionReopen}/reopen`))) questionChanged("Question reopened");
+  }));
+  drawer.querySelectorAll("[data-question-remove]").forEach((button) => button.addEventListener("click", async () => {
+    if (!confirm("Remove this question and its answer?")) return;
+    if (await guarded(() => api("DELETE", `/api/questions/${button.dataset.questionRemove}`))) questionChanged("Question removed");
+  }));
   byId("commentBox").addEventListener("keydown", (event) => { if (event.ctrlKey && event.key === "Enter") postComment(); });
   byId("linkAdd").addEventListener("click", async () => {
     const to = byId("linkTarget").value.trim();
