@@ -26,6 +26,7 @@ Keep them short. The history should read like a changelog when you run `git log 
 - Point at an issue at the end of the line, `Fix list limit parsing (#12)`, or close it with `Closes #12` on its own line.
 - No merge commits. Rebase your branch on main and squash it.
 - Use a comma, a colon or two sentences instead of a long dash.
+- Start the line with the verb that says what kind of change it is: Add, Show, Support, Introduce or Allow list under Added; Fix, Stop, Refuse, Keep, Prevent or Handle under Fixed; Remove or Drop under Removed; anything else under Changed.
 
 | Good | Not good |
 |---|---|
@@ -43,6 +44,7 @@ Keep them short. The history should read like a changelog when you run `git log 
 - Every behaviour has a test, and the test must be able to fail. Prove it by breaking the code and watching the test catch it.
 - Every API route is described in `ledger/openapi.py`; a test fails when one is missing.
 - Docs change in the same commit as the behaviour they describe.
+- Do not edit `CHANGELOG.md`. It is generated from commit subjects when a release is cut, so contributors never conflict over it.
 - Write plainly in docs and in the interface.
 
 ## Before you push
