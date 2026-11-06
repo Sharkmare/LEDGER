@@ -221,6 +221,8 @@ CREATE INDEX IF NOT EXISTS boards_area ON boards(area_id);
 CREATE INDEX IF NOT EXISTS iterations_project ON iterations(project_key);
 CREATE INDEX IF NOT EXISTS kb_pages_tree ON kb_pages(space_id, parent_id, position);
 CREATE INDEX IF NOT EXISTS kb_pages_updated ON kb_pages(updated);
+CREATE INDEX IF NOT EXISTS kb_pages_parent ON kb_pages(parent_id, position, id);
+CREATE INDEX IF NOT EXISTS kb_pages_title ON kb_pages(title COLLATE NOCASE);
 CREATE INDEX IF NOT EXISTS kb_links_target ON kb_links(kind, target);
 CREATE INDEX IF NOT EXISTS kb_versions_page ON kb_versions(page_id, version);
 """
@@ -281,6 +283,7 @@ def _migrate(connection: sqlite3.Connection) -> None:
         for name, definition in additions.items():
             if name not in present:
                 connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
+    connection.execute("CREATE INDEX IF NOT EXISTS kb_pages_translation ON kb_pages(translation_of)")
     connection.commit()
 
 

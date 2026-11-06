@@ -324,6 +324,7 @@ def _clean_review_by(value: Any) -> str:
     return store._clean_date("review_by", value)
 
 
+TITLE_LOOKUP_BATCH = 500
 LOCALE_PATTERN = re.compile(r"^[a-z]{2,3}(-[a-z0-9]+)*$")
 
 
@@ -442,6 +443,18 @@ def _breadcrumbs(connection: sqlite3.Connection, row: sqlite3.Row) -> list[dict]
     return list(reversed(trail))
 
 
+def _resolve_titles(connection: sqlite3.Connection, targets: list[str]) -> dict:
+    wanted = list(dict.fromkeys(target.lower() for target in targets))
+    found: dict[str, dict | None] = {target: None for target in wanted}
+    for start in range(0, len(wanted), TITLE_LOOKUP_BATCH):
+        batch = wanted[start:start + TITLE_LOOKUP_BATCH]
+        rows = connection.execute(
+            f"SELECT id, title FROM kb_pages WHERE title COLLATE NOCASE IN ({','.join('?' * len(batch))}) AND status != 'archived' ORDER BY id DESC", batch)
+        for match in rows:
+            found[match["title"].lower()] = {"id": match["id"], "title": match["title"]}
+    return found
+
+
 def _languages(connection: sqlite3.Connection, row: sqlite3.Row) -> list[dict]:
     base_id = row["translation_of"] or row["id"]
     base = _page_row(connection, base_id)
@@ -476,11 +489,7 @@ def get_page(connection: sqlite3.Connection, page_id: Any, actor: str | None = N
         except LedgerError:
             continue
     page["tickets"] = tickets
-    titles = {}
-    for target in _wiki_titles(row["body"]):
-        found = connection.execute("SELECT id, title FROM kb_pages WHERE title = ? COLLATE NOCASE AND status != 'archived' LIMIT 1", (target,)).fetchone()
-        titles[target.lower()] = {"id": found["id"], "title": found["title"]} if found else None
-    page["wiki"] = titles
+    page["wiki"] = _resolve_titles(connection, _wiki_titles(row["body"]))
     page["favourite"] = bool(actor and connection.execute("SELECT 1 FROM kb_favourites WHERE actor = ? AND page_id = ?", (actor, row["id"])).fetchone())
     page["my_feedback"] = None
     if actor:

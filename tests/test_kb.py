@@ -76,6 +76,30 @@ class PageTests(unittest.TestCase):
         self.assertEqual([(entry["locale"], entry["current"]) for entry in kb.get_page(self.connection, base["id"])["languages"]], [("", True), ("fr", False), ("ja", False)])
         self.assertEqual(kb.get_page(self.connection, other["id"])["languages"], [])
 
+    def test_many_links_resolve_in_a_handful_of_queries_and_case_insensitively(self):
+        target = kb.create_page(self.connection, "ENG", "Target Page")
+        body = " ".join(f"[[Missing {n}]]" for n in range(1200)) + " [[target PAGE]]"
+        statements = []
+        self.connection.set_trace_callback(statements.append)
+        page = kb.create_page(self.connection, "ENG", "Index", body=body)
+        statements.clear()
+        wiki = kb.get_page(self.connection, page["id"])["wiki"]
+        self.connection.set_trace_callback(None)
+        self.assertEqual(wiki["target page"]["id"], target["id"])
+        self.assertIsNone(wiki["missing 7"])
+        self.assertLess(len([s for s in statements if "COLLATE NOCASE IN" in s]), 5)
+
+    def test_the_hot_lookups_use_indexes(self):
+        plans = {
+            "title": "SELECT id FROM kb_pages WHERE title COLLATE NOCASE IN ('x')",
+            "children": "SELECT id FROM kb_pages WHERE parent_id = 1 AND status != 'archived' ORDER BY position, id",
+            "translations": "SELECT id FROM kb_pages WHERE translation_of = 1",
+        }
+        for name, statement in plans.items():
+            plan = " ".join(row[3] for row in self.connection.execute("EXPLAIN QUERY PLAN " + statement))
+            self.assertIn("USING", plan, f"{name}: {plan}")
+            self.assertNotIn("SCAN kb_pages ", plan + " ", f"{name}: {plan}")
+
     def test_translation_rules(self):
         base = kb.create_page(self.connection, "ENG", "Guide")
         variant = kb.create_page(self.connection, "ENG", "Guide/ja", translation_of=base["id"], locale="ja")
