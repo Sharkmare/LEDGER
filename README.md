@@ -133,7 +133,7 @@ The interface uses the system font stack. To use other fonts, put a `fonts.css` 
 
 ## Contributing
 
-Read `CONTRIBUTING.md`. Commit messages are one short line; `git config core.hooksPath .githooks` turns on the check.
+Release notes are in `CHANGELOG.md`. Read `CONTRIBUTING.md`. Commit messages are one short line; `git config core.hooksPath .githooks` turns on the check.
 
 ## Tests
 
