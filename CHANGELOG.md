@@ -2,6 +2,23 @@
 
 Generated from commit subjects by `tools/changelog.py` when a release is cut. Do not edit it by hand: a subject's first word picks its heading (see CONTRIBUTING.md).
 
+## 1.2.0 (2026-11-06)
+
+### Added
+
+- Add open questions on tickets, answered from the ticket drawer (`9fc2683`)
+
+### Changed
+
+- Speed up writes by running the database in WAL mode (`8ad2bef`)
+
+### Fixed
+
+- Stop the KB tree from asking a space for another space's folders (`bb3df94`)
+- Stop the KB tree refresh from re-opening folders the reader closed (`bf76d29`)
+- Stop the refresh from redrawing unchanged pages and interrupting drags (`1936b18`)
+- Fix the sidebar section arrows shifting when a section collapses (`3a79f9b`)
+
 ## 1.1.0 (2026-11-06)
 
 ### Added

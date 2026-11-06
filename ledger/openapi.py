@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from . import kb, metrics, questions, store
 
-API_VERSION = "1.1.0"
+API_VERSION = "1.2.0"
 KEY_EXAMPLE = "APP-1"
 
 
