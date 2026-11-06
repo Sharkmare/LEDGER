@@ -275,17 +275,20 @@ function treeLevelHtml(key, level, context) {
 
 function renderKbLayout(renderContent) {
   const { space } = state.pageData;
+  const previousBody = byId("kbTreeBody");
+  const treeScroll = previousBody && previousBody.dataset.space === String(space.id) ? previousBody.scrollTop : 0;
   const context = { activeId: state.kb.view === "page" ? state.kb.pageId : null, expanded: new Set(kbExpanded()) };
   const rootLevel = kbTree.levels.root || { items: [], total: 0 };
   const spaces = state.pageData.overview.spaces.filter((s) => s.kind === "docs");
   byId("main").innerHTML = `<div class="kb-layout"><nav class="kb-tree" aria-label="Pages in ${escapeHtml(space.name)}">
       <div class="kb-tree-head">${spaceTile(space, 26)}<select id="kbSpaceSwitch" aria-label="Space">${spaces.map((s) => `<option value="${s.id}"${s.id === space.id ? " selected" : ""}>${escapeHtml(s.name)}</option>`).join("")}</select></div>
       <div class="kb-tree-actions"><button type="button" class="ghost small" id="kbTreeNew">New page</button></div>
-      <div class="kb-tree-body" id="kbTreeBody">${rootLevel.items.length ? `<ul class="kb-roots">${treeLevelHtml("root", rootLevel, context)}</ul>` : `<div class="empty-line">No pages yet.</div>`}</div></nav>
+      <div class="kb-tree-body" id="kbTreeBody" data-space="${space.id}">${rootLevel.items.length ? `<ul class="kb-roots">${treeLevelHtml("root", rootLevel, context)}</ul>` : `<div class="empty-line">No pages yet.</div>`}</div></nav>
     <section class="kb-content" id="kbContent"></section></div>`;
   const tool = state.pageData.overview.spaces.find((s) => s.kind === "tools");
   byId("kbSpaceSwitch").addEventListener("change", (event) => kbGo({ view: "space", spaceId: Number(event.target.value), pageId: null }));
   byId("kbTreeNew").addEventListener("click", () => newPageDialog({ space: space.id }));
+  byId("kbTreeBody").scrollTop = treeScroll;
   wireTree(byId("kbTreeBody"), space);
   renderContent(byId("kbContent"));
   void tool;
