@@ -232,6 +232,7 @@ COLUMN_ADDITIONS = {
         "tags": "TEXT NOT NULL DEFAULT ''",
     },
     "areas": {"tags": "TEXT NOT NULL DEFAULT ''"},
+    "kb_pages": {"translation_of": "INTEGER REFERENCES kb_pages(id)", "locale": "TEXT NOT NULL DEFAULT ''"},
     "tickets": {
         "start": "TEXT NOT NULL DEFAULT ''", "estimate": "REAL",
         "area_id": "INTEGER REFERENCES areas(id)", "iteration_id": "INTEGER REFERENCES iterations(id)",

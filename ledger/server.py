@@ -465,7 +465,8 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
         pages = kb.list_pages(
             connection, space=arguments.get("space"), parent=parent, status=arguments.get("status"), label=arguments.get("label"),
             page_type=arguments.get("type"), stale=arguments.get("stale") in ("1", "true"), favourite_of=actor() if arguments.get("favourite") in ("1", "true") else None,
-            limit=whole_number("limit", 200), order=arguments.get("order", "updated"), tool_kind=arguments.get("kind"), location=arguments.get("location"))
+            limit=whole_number("limit", 200), order=arguments.get("order", "updated"), tool_kind=arguments.get("kind"), location=arguments.get("location"),
+            translations=arguments.get("translations") in ("1", "true"))
         return jsonify(pages)
 
     @app.post("/api/kb/pages")
@@ -478,7 +479,8 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
                 raise store.NotFound(f"no page template {payload['template']!r}")
             body = body or template["body"]
         created = kb.create_page(connection, payload.get("space"), payload.get("title"), body, payload.get("parent"), payload.get("labels"),
-                                 payload.get("status", "published"), payload.get("meta"), actor(), None, payload.get("review_days"), payload.get("comment", ""))
+                                 payload.get("status", "published"), payload.get("meta"), actor(), None, payload.get("review_days"), payload.get("comment", ""),
+                                 payload.get("translation_of"), payload.get("locale", ""))
         return jsonify(created), 201
 
     @app.get("/api/kb/pages/<int:page_id>")

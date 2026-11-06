@@ -45,6 +45,7 @@ Pages live in spaces. A space holds a tree of pages you can reorder by dragging,
 - **Reading**: clean text with a contents list, the tickets a page mentions, the pages that link to it, previous and next page, and a Was this helpful? question that asks what was missing when the answer is no.
 - **Writing**: a toolbar and shortcuts (Ctrl B, Ctrl I, Ctrl L, Ctrl S), list continuation, `[[` suggests page titles, drafts are kept in the browser until you save, and a new page can start from a template (how-to, runbook, decision record, meeting notes, reference).
 - **Links**: `[[Page title]]` links to a page, and a title that does not exist yet shows as a link that creates it. `APP-12` links to a ticket, and a ticket lists the pages that mention it.
+- **Translations**: a page can be a translation of another page in the same space (`translation_of` and a `locale` such as `ja` in the API). Translations stay out of page lists, the tree and the space's page count, and every page in a set shows a language bar linking the others. Pass `translations=1` to list them.
 - **History**: every save is a version with an author and an optional note; compare any version with the one before and restore it.
 - **Trust**: verify a page to say it is still right and set when it should be looked at again. Pages past their review date are flagged and listed.
 - **Find**: Ctrl K searches pages, tools and tickets at once, ranked, with matches highlighted, and jumps to any area, board, dashboard or setting.

@@ -397,6 +397,7 @@ function renderPageRead(container) {
     <div class="kb-rail-block"><h4>Details</h4><div class="muted">Version ${page.version}, ${page.views} views</div><div class="muted">Created ${ago(page.created)}</div></div>`;
   container.innerHTML = `<div class="kb-doc-wrap"><article class="kb-doc">
       <h1>${escapeHtml(page.title)}</h1>
+      ${languagesHtml(page)}
       <div class="kb-meta"><span class="muted">Updated ${ago(page.updated)} by ${escapeHtml(page.author || "unknown")}</span>${badgeHtml(page)} ${reviewBadge(page)}
         ${page.labels.map((l) => `<span class="chip tint" style="--tint:${tagColor(l)}">${escapeHtml(l)}</span>`).join("")}</div>
       ${pageActionsHtml(page)}
@@ -408,6 +409,14 @@ function renderPageRead(container) {
   wireHelpful(page);
   container.querySelectorAll("[data-ticket-open]").forEach((row) => activateOnKey(row, () => openTicket(row.dataset.ticketOpen)));
   container.querySelectorAll("[data-toc]").forEach((link) => link.addEventListener("click", (event) => { event.preventDefault(); const target = document.getElementById(link.dataset.toc); if (target) target.scrollIntoView({ behavior: "smooth" }); }));
+}
+
+function languagesHtml(page) {
+  if (!page.languages.length) return "";
+  const entries = page.languages.map((entry) => entry.current
+    ? `<span class="chip current" aria-current="true">${escapeHtml(entry.locale || "base")}</span>`
+    : `<a href="#" class="chip" data-kb-page="${entry.id}" title="${escapeHtml(entry.title)}">${escapeHtml(entry.locale || "base")}</a>`);
+  return `<nav class="kb-languages" aria-label="Languages">${entries.join("")}</nav>`;
 }
 
 async function startEditing() {

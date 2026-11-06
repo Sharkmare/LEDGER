@@ -83,7 +83,7 @@ def has_search(connection: sqlite3.Connection) -> bool:
 def _space_dict(connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
     space = dict(row)
     counts = connection.execute(
-        "SELECT COUNT(*) AS pages, MAX(updated) AS updated FROM kb_pages WHERE space_id = ? AND status != 'archived'", (row["id"],)).fetchone()
+        "SELECT COUNT(*) AS pages, MAX(updated) AS updated FROM kb_pages WHERE space_id = ? AND status != 'archived' AND translation_of IS NULL", (row["id"],)).fetchone()
     space["pages"], space["updated"] = counts["pages"], counts["updated"]
     return space
 
@@ -324,6 +324,34 @@ def _clean_review_by(value: Any) -> str:
     return store._clean_date("review_by", value)
 
 
+LOCALE_PATTERN = re.compile(r"^[a-z]{2,3}(-[a-z0-9]+)*$")
+
+
+def _clean_translation(connection: sqlite3.Connection, translation_of: Any, locale: Any, space_id: int, own_id: int | None) -> tuple[int | None, str]:
+    base_given = translation_of not in (None, "")
+    locale_given = _require_text("locale", locale or "").strip() != ""
+    if not base_given and not locale_given:
+        return None, ""
+    if base_given != locale_given:
+        raise LedgerError("a translation needs both translation_of and locale")
+    locale = str(locale).strip().lower()
+    if not LOCALE_PATTERN.match(locale):
+        raise LedgerError("locale is a language code such as en, ja or zh-cn")
+    base = _page_row(connection, translation_of)
+    if base["space_id"] != space_id:
+        raise LedgerError("a translation must be in the same space as its base page")
+    if own_id is not None and base["id"] == own_id:
+        raise LedgerError("a page cannot be a translation of itself")
+    if base["translation_of"] is not None:
+        raise LedgerError("translate the base page, not another translation")
+    if own_id is not None and connection.execute("SELECT 1 FROM kb_pages WHERE translation_of = ?", (own_id,)).fetchone():
+        raise LedgerError("a page that has translations cannot itself be a translation")
+    duplicate = connection.execute("SELECT id FROM kb_pages WHERE translation_of = ? AND locale = ? AND id IS NOT ?", (base["id"], locale, own_id)).fetchone()
+    if duplicate:
+        raise LedgerError(f"the page already has a {locale} translation")
+    return base["id"], locale
+
+
 def _check_parent(connection: sqlite3.Connection, parent: Any, space_id: int, own_id: int | None) -> int | None:
     if parent in (None, "", 0):
         return None
@@ -341,12 +369,14 @@ def _check_parent(connection: sqlite3.Connection, parent: Any, space_id: int, ow
 
 
 def create_page(connection: sqlite3.Connection, space: Any, title: Any, body: Any = "", parent: Any = None, labels: Any = None, status: Any = "published",
-                meta: Any = None, author: str = "system", source: str | None = None, review_days: Any = None, comment: Any = "") -> dict:
+                meta: Any = None, author: str = "system", source: str | None = None, review_days: Any = None, comment: Any = "",
+                translation_of: Any = None, locale: Any = "") -> dict:
     space_row = _space_row(connection, space)
     page_type = "tool" if space_row["kind"] == "tools" else "article"
     title, body = _clean_title(title), _clean_body(body)
     status = _require_choice("status", status, PAGE_STATUSES)
     parent_id = _check_parent(connection, parent, space_row["id"], None)
+    translation_id, locale = _clean_translation(connection, translation_of, locale, space_row["id"], None)
     meta_value = clean_tool_meta(meta) if page_type == "tool" else {}
     if page_type == "article" and meta not in (None, "", {}):
         raise LedgerError("only pages in the Tools space carry tool details")
@@ -361,10 +391,10 @@ def create_page(connection: sqlite3.Connection, space: Any, title: Any, body: An
     position = connection.execute("SELECT COALESCE(MAX(position), 0) + 1 FROM kb_pages WHERE space_id = ? AND parent_id IS ?", (space_row["id"], parent_id)).fetchone()[0]
     now = time.time()
     cursor = connection.execute(
-        "INSERT INTO kb_pages (space_id, parent_id, position, title, body, page_type, meta, status, labels, author, created, updated, review_by, source, version)"
-        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
+        "INSERT INTO kb_pages (space_id, parent_id, position, title, body, page_type, meta, status, labels, author, created, updated, review_by, source, translation_of, locale, version)"
+        " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 1)",
         (space_row["id"], parent_id, position, title, body, page_type, json.dumps(meta_value, ensure_ascii=False), status,
-         json.dumps(store._clean_labels(labels), ensure_ascii=False), author, now, now, review_by, source))
+         json.dumps(store._clean_labels(labels), ensure_ascii=False), author, now, now, review_by, source, translation_id, locale))
     row = _page_row(connection, cursor.lastrowid)
     _save_version(connection, row, author, _require_text("comment", comment) or "Created")
     _record_links(connection, row["id"], body)
@@ -395,7 +425,7 @@ def _summary_dict(connection: sqlite3.Connection, row: sqlite3.Row) -> dict:
             "page_type": row["page_type"], "status": row["status"], "labels": json.loads(row["labels"]), "author": row["author"], "created": row["created"],
             "updated": row["updated"], "review_by": row["review_by"], "verified_by": row["verified_by"], "verified_at": row["verified_at"],
             "stale": bool(row["review_by"]) and row["review_by"] < today, "views": row["views"], "helpful": row["helpful"], "unhelpful": row["unhelpful"],
-            "version": row["version"], "excerpt": _excerpt(row["body"])}
+            "version": row["version"], "excerpt": _excerpt(row["body"]), "translation_of": row["translation_of"], "locale": row["locale"]}
     if row["page_type"] == "tool":
         page["tool"] = _tool_summary(meta)
     return page
@@ -412,6 +442,16 @@ def _breadcrumbs(connection: sqlite3.Connection, row: sqlite3.Row) -> list[dict]
     return list(reversed(trail))
 
 
+def _languages(connection: sqlite3.Connection, row: sqlite3.Row) -> list[dict]:
+    base_id = row["translation_of"] or row["id"]
+    base = _page_row(connection, base_id)
+    variants = connection.execute("SELECT id, title, locale FROM kb_pages WHERE translation_of = ? AND status != 'archived' ORDER BY locale", (base_id,)).fetchall()
+    if not variants:
+        return []
+    entries = [{"id": base["id"], "title": base["title"], "locale": ""}] + [{"id": v["id"], "title": v["title"], "locale": v["locale"]} for v in variants]
+    return [{**entry, "current": entry["id"] == row["id"]} for entry in entries]
+
+
 def get_page(connection: sqlite3.Connection, page_id: Any, actor: str | None = None, count_view: bool = False) -> dict:
     row = _page_row(connection, page_id)
     if count_view:
@@ -423,7 +463,8 @@ def get_page(connection: sqlite3.Connection, page_id: Any, actor: str | None = N
     page.update({"body": row["body"], "meta": json.loads(row["meta"]), "source": row["source"], "space": {"id": space["id"], "key": space["key"], "name": space["name"],
                  "kind": space["kind"], "color": space["color"]}, "breadcrumbs": _breadcrumbs(connection, row)})
     page["children"] = [{"id": child["id"], "title": child["title"], "status": child["status"], "page_type": child["page_type"], "position": child["position"]}
-                        for child in connection.execute("SELECT * FROM kb_pages WHERE parent_id = ? AND status != 'archived' ORDER BY position, id", (row["id"],))]
+                        for child in connection.execute("SELECT * FROM kb_pages WHERE parent_id = ? AND status != 'archived' AND translation_of IS NULL ORDER BY position, id", (row["id"],))]
+    page["languages"] = _languages(connection, row)
     page["backlinks"] = [{"id": link["id"], "title": link["title"]} for link in connection.execute(
         "SELECT p.id, p.title FROM kb_links l JOIN kb_pages p ON p.id = l.page_id WHERE l.kind = 'page' AND l.target = ? AND p.id != ? AND p.status != 'archived' ORDER BY p.title",
         (row["title"].lower(), row["id"]))]
@@ -450,7 +491,7 @@ def get_page(connection: sqlite3.Connection, page_id: Any, actor: str | None = N
 
 def update_page(connection: sqlite3.Connection, page_id: Any, changes: dict, author: str = "system", comment: Any = "") -> dict:
     row = _page_row(connection, page_id)
-    allowed = ("title", "body", "parent", "position", "labels", "status", "meta", "review_by")
+    allowed = ("title", "body", "parent", "position", "labels", "status", "meta", "review_by", "translation_of", "locale")
     unknown = sorted(set(changes) - set(allowed))
     if unknown:
         raise LedgerError(f"cannot edit {', '.join(unknown)}; editable fields are {', '.join(allowed)}")
@@ -473,12 +514,18 @@ def update_page(connection: sqlite3.Connection, page_id: Any, changes: dict, aut
         if isinstance(changes["position"], bool) or not str(changes["position"]).lstrip("-").isdigit():
             raise LedgerError("position must be a whole number")
         position = int(changes["position"])
+    translation_id, locale = row["translation_of"], row["locale"]
+    if "translation_of" in changes and changes["translation_of"] in (None, "") and "locale" not in changes:
+        locale = ""
+    if "translation_of" in changes or "locale" in changes:
+        translation_id, locale = _clean_translation(
+            connection, changes.get("translation_of", translation_id), changes.get("locale", locale), row["space_id"], row["id"])
     content_changed = (title, body, meta) != (row["title"], row["body"], row["meta"])
     version = row["version"] + 1 if content_changed else row["version"]
     now = time.time()
     connection.execute(
-        "UPDATE kb_pages SET title = ?, body = ?, meta = ?, status = ?, labels = ?, review_by = ?, parent_id = ?, position = ?, version = ?, updated = ?, author = ? WHERE id = ?",
-        (title, body, meta, status, labels, review_by, parent_id, position, version, now if content_changed or status != row["status"] else row["updated"],
+        "UPDATE kb_pages SET title = ?, body = ?, meta = ?, status = ?, labels = ?, review_by = ?, parent_id = ?, position = ?, translation_of = ?, locale = ?, version = ?, updated = ?, author = ? WHERE id = ?",
+        (title, body, meta, status, labels, review_by, parent_id, position, translation_id, locale, version, now if content_changed or status != row["status"] else row["updated"],
          author if content_changed else row["author"], row["id"]))
     updated = _page_row(connection, row["id"])
     if content_changed:
@@ -491,14 +538,14 @@ def update_page(connection: sqlite3.Connection, page_id: Any, changes: dict, aut
 
 def delete_page(connection: sqlite3.Connection, page_id: Any, cascade: bool = False) -> dict:
     row = _page_row(connection, page_id)
-    children = [child["id"] for child in connection.execute("SELECT id FROM kb_pages WHERE parent_id = ?", (row["id"],))]
+    children = [child["id"] for child in connection.execute("SELECT id FROM kb_pages WHERE parent_id = ? AND translation_of IS NULL", (row["id"],))]
     if children and not cascade:
         raise LedgerError("the page has sub-pages; move them, delete them first, or delete with cascade")
     found, stack = [], [row["id"]]
     while stack:
         current = stack.pop()
         found.append(current)
-        stack += [child["id"] for child in connection.execute("SELECT id FROM kb_pages WHERE parent_id = ?", (current,))]
+        stack += [child["id"] for child in connection.execute("SELECT id FROM kb_pages WHERE parent_id = ? OR translation_of = ?", (current, current))]
     for current in reversed(found):
         for table in ("kb_versions", "kb_links", "kb_feedback", "kb_favourites"):
             connection.execute(f"DELETE FROM {table} WHERE page_id = ?", (current,))
@@ -511,8 +558,10 @@ def delete_page(connection: sqlite3.Connection, page_id: Any, cascade: bool = Fa
 
 def list_pages(connection: sqlite3.Connection, space: Any = None, parent: Any = "any", status: Any = None, label: Any = None, page_type: Any = None,
                stale: bool = False, favourite_of: str | None = None, limit: int = 200, order: str = "updated", tool_kind: Any = None,
-               location: Any = None) -> list[dict]:
+               location: Any = None, translations: bool = False) -> list[dict]:
     clauses, parameters = [], []
+    if not translations:
+        clauses.append("translation_of IS NULL")
     if space not in (None, ""):
         clauses.append("space_id = ?")
         parameters.append(_space_row(connection, space)["id"])
@@ -552,7 +601,7 @@ def list_pages(connection: sqlite3.Connection, space: Any = None, parent: Any = 
 
 def tree(connection: sqlite3.Connection, space: Any) -> list[dict]:
     space_row = _space_row(connection, space)
-    rows = connection.execute("SELECT * FROM kb_pages WHERE space_id = ? AND status != 'archived' ORDER BY position, id", (space_row["id"],)).fetchall()
+    rows = connection.execute("SELECT * FROM kb_pages WHERE space_id = ? AND status != 'archived' AND translation_of IS NULL ORDER BY position, id", (space_row["id"],)).fetchall()
     nodes = {row["id"]: {**_summary_dict(connection, row), "children": []} for row in rows}
     roots = []
     for row in rows:
@@ -745,7 +794,7 @@ def overview(connection: sqlite3.Connection, actor: str | None = None) -> dict:
         "favourites": list_pages(connection, favourite_of=actor, limit=12) if actor else [],
         "needs_review": list_pages(connection, stale=True, limit=8),
         "drafts": list_pages(connection, status="draft", limit=8),
-        "counts": {"pages": connection.execute("SELECT COUNT(*) FROM kb_pages WHERE status != 'archived'").fetchone()[0],
+        "counts": {"pages": connection.execute("SELECT COUNT(*) FROM kb_pages WHERE status != 'archived' AND translation_of IS NULL").fetchone()[0],
                    "tools": connection.execute("SELECT COUNT(*) FROM kb_pages WHERE page_type = 'tool' AND status != 'archived'").fetchone()[0],
                    "stale": connection.execute("SELECT COUNT(*) FROM kb_pages WHERE review_by != '' AND review_by < ? AND status != 'archived'", (today,)).fetchone()[0]},
         "search": has_search(connection),

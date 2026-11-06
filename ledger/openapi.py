@@ -411,6 +411,7 @@ def kb_paths() -> dict:
         query_parameter("kind", "Tool kind", {"type": "string", "enum": list(kb.TOOL_KINDS)}),
         query_parameter("location", "Tool location", {"type": "string", "enum": list(kb.TOOL_LOCATIONS)}),
         query_parameter("order", "Sort order", {"type": "string", "enum": ["updated", "title", "views", "tree"]}),
+        query_parameter("translations", "1 to include translations; by default only base pages are listed", {"type": "string", "enum": ["1"]}),
         query_parameter("limit", "Maximum pages returned", {"type": "integer", "default": 200}),
     ]
     found = {
@@ -484,7 +485,9 @@ def kb_schemas() -> dict:
         "page_type": {"type": "string", "enum": list(kb.PAGE_TYPES)}, "status": {"type": "string", "enum": list(kb.PAGE_STATUSES)},
         "labels": {"type": "array", "items": {"type": "string"}}, "author": {"type": "string"}, "created": {"type": "number"}, "updated": {"type": "number"},
         "review_by": {"type": "string"}, "verified_by": {"type": "string"}, "verified_at": {"type": "number", "nullable": True}, "stale": {"type": "boolean"},
-        "views": count, "helpful": count, "unhelpful": count, "version": count, "excerpt": {"type": "string"}, "tool": {"type": "object"}}
+        "views": count, "helpful": count, "unhelpful": count, "version": count, "excerpt": {"type": "string"}, "tool": {"type": "object"},
+        "translation_of": {"type": "integer", "nullable": True, "description": "Id of the base page when this page is a translation"},
+        "locale": {"type": "string", "description": "Language code of a translation such as ja or zh-cn, empty for a base page"}}
     return {
         "NewKbSpace": {"type": "object", "required": ["key", "name"], "properties": {
             "key": {"type": "string", "example": "ENG"}, "name": {"type": "string", "example": "Engineering"}, "description": {"type": "string"},
@@ -497,13 +500,17 @@ def kb_schemas() -> dict:
             "body": {"type": "string", "description": "Markdown; [[Page title]] links to a page and APP-12 links to a ticket"},
             "template": {"type": "string", "description": "A template id from /api/kb/templates; fills an empty body"},
             "parent": {"type": "integer"}, "labels": {"type": "array", "items": {"type": "string"}}, "status": {"type": "string", "enum": list(kb.PAGE_STATUSES)},
-            "meta": tool, "review_days": {"type": "integer", "description": "Days until the page needs a review"}, "comment": {"type": "string"}}},
+            "meta": tool, "review_days": {"type": "integer", "description": "Days until the page needs a review"}, "comment": {"type": "string"},
+            "translation_of": {"type": "integer", "description": "Make this page a translation of that base page; needs locale"},
+            "locale": {"type": "string", "example": "ja", "description": "Language code of the translation; needs translation_of"}}},
         "KbPageSummary": {"type": "object", "properties": summary_properties},
         "KbPage": {"type": "object", "properties": {**summary_properties, "body": {"type": "string"}, "meta": tool, "space": {"type": "object"},
                    "breadcrumbs": {"type": "array", "items": {"type": "object"}}, "children": {"type": "array", "items": {"type": "object"}},
                    "backlinks": {"type": "array", "items": {"type": "object"}}, "tickets": {"type": "array", "items": {"type": "object"}},
                    "wiki": {"type": "object", "description": "Each [[link]] in the text, resolved to a page or null"}, "favourite": {"type": "boolean"},
-                   "my_feedback": {"type": "boolean", "nullable": True}}},
+                   "my_feedback": {"type": "boolean", "nullable": True},
+                   "languages": {"type": "array", "description": "The base page and its translations, empty when the page has none",
+                                 "items": {"type": "object", "properties": {"id": count, "title": {"type": "string"}, "locale": {"type": "string"}, "current": {"type": "boolean"}}}}}},
         "KbVersion": {"type": "object", "properties": {"version": count, "title": {"type": "string"}, "author": {"type": "string"}, "comment": {"type": "string"},
                                                        "created": {"type": "number"}, "size": count}},
         "KbDiff": {"type": "object", "properties": {"from": count, "to": count, "added": count, "removed": count, "title_changed": {"type": "boolean"},

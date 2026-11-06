@@ -36,6 +36,16 @@ class KnowledgeApiTests(unittest.TestCase):
         self.assertEqual((tree[0]["title"], tree[0]["children"][0]["title"], child["breadcrumbs"][0]["title"]), ("Deploy runbook", "Rollback", "Deploy runbook"))
         self.assertEqual(self.client.post("/api/kb/pages", json={"space": "ENG", "title": "x", "template": "nope"}).status_code, 404)
 
+    def test_translations_are_created_through_the_api_and_listed_only_on_request(self):
+        base = self.page("Basic controls")
+        japanese = self.page("Basic controls/ja", translation_of=base["id"], locale="ja")
+        self.assertEqual((japanese["translation_of"], japanese["locale"]), (base["id"], "ja"))
+        self.assertEqual([p["title"] for p in self.client.get("/api/kb/pages?space=ENG").get_json()], ["Basic controls"])
+        self.assertEqual(len(self.client.get("/api/kb/pages?space=ENG&translations=1").get_json()), 2)
+        self.assertEqual(self.client.get(f"/api/kb/pages/{base['id']}").get_json()["languages"][1]["title"], "Basic controls/ja")
+        refused = self.client.post("/api/kb/pages", json={"space": "ENG", "title": "x", "translation_of": base["id"]})
+        self.assertEqual(refused.status_code, 400)
+
     def test_editing_keeps_history_with_comments_and_can_restore(self):
         page = self.page("Guide", body="one\ntwo")
         edited = self.client.patch(f"/api/kb/pages/{page['id']}", json={"body": "one\ntwo\nthree", "comment": "added three"}, headers={server.ACTOR_HEADER: "bob"}).get_json()

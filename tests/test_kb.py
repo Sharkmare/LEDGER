@@ -61,6 +61,51 @@ class PageTests(unittest.TestCase):
     def setUp(self):
         self.connection = workspace()
 
+    def test_translations_hide_from_lists_trees_and_counts_but_show_as_languages(self):
+        base = kb.create_page(self.connection, "ENG", "Basic controls")
+        japanese = kb.create_page(self.connection, "ENG", "Basic controls/ja", translation_of=base["id"], locale="JA")
+        kb.create_page(self.connection, "ENG", "Basic controls/fr", translation_of=base["id"], locale="fr")
+        other = kb.create_page(self.connection, "ENG", "Other")
+        self.assertEqual(japanese["locale"], "ja")
+        self.assertEqual([p["title"] for p in kb.list_pages(self.connection, space="ENG", order="title")], ["Basic controls", "Other"])
+        self.assertEqual(len(kb.list_pages(self.connection, space="ENG", translations=True)), 4)
+        self.assertEqual([n["title"] for n in kb.tree(self.connection, "ENG")], ["Basic controls", "Other"])
+        self.assertEqual(kb.get_space(self.connection, "ENG")["pages"], 2)
+        languages = kb.get_page(self.connection, japanese["id"])["languages"]
+        self.assertEqual([(entry["locale"], entry["current"]) for entry in languages], [("", False), ("fr", False), ("ja", True)])
+        self.assertEqual([(entry["locale"], entry["current"]) for entry in kb.get_page(self.connection, base["id"])["languages"]], [("", True), ("fr", False), ("ja", False)])
+        self.assertEqual(kb.get_page(self.connection, other["id"])["languages"], [])
+
+    def test_translation_rules(self):
+        base = kb.create_page(self.connection, "ENG", "Guide")
+        variant = kb.create_page(self.connection, "ENG", "Guide/ja", translation_of=base["id"], locale="ja")
+        cases = (
+            {"translation_of": base["id"], "locale": ""},
+            {"translation_of": None, "locale": "de"},
+            {"translation_of": base["id"], "locale": "Japanese"},
+            {"translation_of": base["id"], "locale": "ja"},
+            {"translation_of": variant["id"], "locale": "de"},
+        )
+        for fields in cases:
+            with self.assertRaises(kb.LedgerError, msg=str(fields)):
+                kb.create_page(self.connection, "ENG", "Another", **fields)
+        with self.assertRaises(kb.LedgerError):
+            kb.update_page(self.connection, base["id"], {"translation_of": variant["id"], "locale": "de"})
+        with self.assertRaises(kb.LedgerError):
+            kb.update_page(self.connection, base["id"], {"translation_of": base["id"], "locale": "de"})
+
+    def test_a_page_can_be_linked_and_unlinked_after_creation_and_deleting_a_base_removes_its_translations(self):
+        base = kb.create_page(self.connection, "ENG", "Guide")
+        loose = kb.create_page(self.connection, "ENG", "Guide/de")
+        linked = kb.update_page(self.connection, loose["id"], {"translation_of": base["id"], "locale": "de"})
+        self.assertEqual((linked["translation_of"], linked["locale"]), (base["id"], "de"))
+        unlinked = kb.update_page(self.connection, loose["id"], {"translation_of": None})
+        self.assertEqual((unlinked["translation_of"], unlinked["locale"]), (None, ""))
+        kb.update_page(self.connection, loose["id"], {"translation_of": base["id"], "locale": "de"})
+        removed = kb.delete_page(self.connection, base["id"])
+        self.assertEqual(removed["pages_removed"], 2)
+        self.assertEqual(kb.list_pages(self.connection, space="ENG", translations=True), [])
+
     def test_a_tree_keeps_its_order_and_reports_breadcrumbs(self):
         root = kb.create_page(self.connection, "ENG", "Handbook")
         first = kb.create_page(self.connection, "ENG", "Setup", parent=root["id"])
