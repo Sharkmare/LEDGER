@@ -24,4 +24,12 @@ function hiddenTypesLabel(hidden) {
   return hidden.length ? `Hiding ${hidden.join(", ")}` : "";
 }
 
-if (typeof module !== "undefined") module.exports = { parseHiddenTypes, toggledHiddenType, visibleTickets, hiddenTypesParameter, hiddenTypesLabel };
+function shownColumns(statuses, hidden) {
+  return hidden.length ? statuses.filter((status) => !hidden.includes(status)) : statuses;
+}
+
+function hiddenColumnsLabel(hidden, labelOf = (status) => status) {
+  return hidden.length ? `Hiding ${hidden.map(labelOf).join(", ")}` : "";
+}
+
+if (typeof module !== "undefined") module.exports = { parseHiddenTypes, toggledHiddenType, visibleTickets, hiddenTypesParameter, hiddenTypesLabel, shownColumns, hiddenColumnsLabel };

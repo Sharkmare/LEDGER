@@ -35,6 +35,9 @@ Tickets             any type, with a parent and sub-tickets to any depth
   can be reopened or removed. Asking, answering, reopening and removing are all written to the history. Tickets with an unanswered question show a
   `? 2` badge on cards and in the list, and the Open questions item under Work lists only those tickets. Questions are separate from comments, so
   an answer is never lost in a thread.
+- **Hidden board columns** are a setting per person for every status, on every board: open the profile menu and tick the statuses to hide, for example Done
+  and Cancelled. The columns are left off the ticket board, area boards and board pages, and a `Hiding Done, Cancelled` chip in the filter bar says so and clears
+  them with one click. The tickets stay in list views and counts. The choice is saved in this browser.
 - **Hidden ticket types** are a setting per person: open the profile menu (top right) and tick the types to hide, for example chore or spike.
   Hidden types stay out of the board and list views, area pages and board pages, and a `Hiding bug, chore` chip in the filter bar says so and clears
   them with one click. The choice is saved in this browser. The API takes `exclude_type=bug,chore` on `GET /api/tickets`, which also keeps the

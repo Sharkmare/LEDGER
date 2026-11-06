@@ -2,7 +2,7 @@
 
 const assert = require("assert");
 const path = require("path");
-const { parseHiddenTypes, toggledHiddenType, visibleTickets, hiddenTypesParameter, hiddenTypesLabel } = require(path.join(__dirname, "..", "..", "ledger", "static", "viewsettings.js"));
+const { parseHiddenTypes, toggledHiddenType, visibleTickets, hiddenTypesParameter, hiddenTypesLabel, shownColumns, hiddenColumnsLabel } = require(path.join(__dirname, "..", "..", "ledger", "static", "viewsettings.js"));
 
 const checks = [];
 const check = (name, body) => checks.push([name, body]);
@@ -47,6 +47,30 @@ check("the API parameter and the chip label list the hidden types", () => {
   assert.strictEqual(hiddenTypesParameter([]), "");
   assert.strictEqual(hiddenTypesLabel(["bug", "chore"]), "Hiding bug, chore");
   assert.strictEqual(hiddenTypesLabel([]), "");
+});
+
+const STATUSES = ["backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled"];
+
+check("hidden statuses are read back and toggled in the order of the known statuses", () => {
+  assert.deepStrictEqual(parseHiddenTypes('["cancelled", "done", "gone"]', STATUSES), ["done", "cancelled"]);
+  assert.deepStrictEqual(toggledHiddenType(["cancelled"], "done", STATUSES), ["done", "cancelled"]);
+  assert.deepStrictEqual(toggledHiddenType(["done", "cancelled"], "done", STATUSES), ["cancelled"]);
+});
+
+check("hidden board columns are left out and the rest keep their order", () => {
+  assert.deepStrictEqual(shownColumns(STATUSES, ["done", "cancelled"]), ["backlog", "todo", "in_progress", "in_review", "blocked"]);
+  assert.strictEqual(shownColumns(STATUSES, []), STATUSES);
+  assert.deepStrictEqual(shownColumns(STATUSES, STATUSES), []);
+});
+
+check("a board that does not use a hidden status is unchanged", () => {
+  assert.deepStrictEqual(shownColumns(["todo", "done"], ["cancelled"]), ["todo", "done"]);
+});
+
+check("the hidden columns chip names them with their labels", () => {
+  assert.strictEqual(hiddenColumnsLabel(["done", "cancelled"]), "Hiding done, cancelled");
+  assert.strictEqual(hiddenColumnsLabel(["in_review"], (s) => s.replace("_", " ")), "Hiding in review");
+  assert.strictEqual(hiddenColumnsLabel([]), "");
 });
 
 let failed = 0;

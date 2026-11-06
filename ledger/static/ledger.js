@@ -3,7 +3,7 @@
 const STATUS_LABELS = { backlog: "Backlog", todo: "To do", in_progress: "In progress", in_review: "In review", blocked: "Blocked", done: "Done", cancelled: "Cancelled" };
 const PRIORITY_MARKS = { lowest: "v", low: "-", medium: "=", high: "+", critical: "!", blocker: "!!" };
 const STORAGE = { actor: "ledger.actor", project: "ledger.project", view: "ledger.view", page: "ledger.page", theme: "ledger.theme", nav: "ledger.navCollapsed",
-  hiddenTypes: "ledger.hiddenTypes", sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb", areas: "ledger.navAreas", sort: "ledger.sort" };
+  hiddenTypes: "ledger.hiddenTypes", hiddenStatuses: "ledger.hiddenStatuses", sections: "ledger.navSections", dashboard: "ledger.dashboard", area: "ledger.area", board: "ledger.board", manage: "ledger.manage", kb: "ledger.kb", areas: "ledger.navAreas", sort: "ledger.sort" };
 const DEFAULT_ACTOR = "me";
 const SEARCH_DEBOUNCE_MS = 200;
 const TOAST_MS = 2600;
@@ -47,7 +47,7 @@ Object.assign(ICONS, {
 const state = {
   meta: null, org: { name: "" }, projects: [], areas: [], boards: [], tagList: [], tickets: [], total: 0, stats: null,
   page: "tickets", project: "", nav: "all", view: "board", areaId: null, boardId: null, dashboards: [], dashboardId: null, dashboardData: null,
-  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], hiddenTypes: [], sort: { field: "", direction: "asc" }, filters: emptyFilters(),
+  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], hiddenTypes: [], hiddenStatuses: [], sort: { field: "", direction: "asc" }, filters: emptyFilters(),
 };
 
 const byId = (id) => document.getElementById(id);
@@ -241,6 +241,19 @@ function renderTypeSettings() {
   container.querySelectorAll("[data-hide-type]").forEach((box) => box.addEventListener("change", () => setHiddenTypes(toggledHiddenType(state.hiddenTypes, box.dataset.hideType, state.meta.types))));
 }
 
+function setHiddenStatuses(hidden) {
+  state.hiddenStatuses = hidden;
+  remember(STORAGE.hiddenStatuses, JSON.stringify(hidden));
+  renderStatusSettings();
+  render();
+}
+
+function renderStatusSettings() {
+  const container = byId("statusSettings");
+  container.innerHTML = state.meta.statuses.map((status) => `<label><input type="checkbox" data-hide-status="${escapeHtml(status)}"${state.hiddenStatuses.includes(status) ? " checked" : ""}>${escapeHtml(STATUS_LABELS[status])}</label>`).join("");
+  container.querySelectorAll("[data-hide-status]").forEach((box) => box.addEventListener("change", () => setHiddenStatuses(toggledHiddenType(state.hiddenStatuses, box.dataset.hideStatus, state.meta.statuses))));
+}
+
 function applyFilters(next) {
   state.filters = next;
   closeColumnMenu();
@@ -289,7 +302,9 @@ function renderFilterBar() {
   const clearAll = active.length > 1 ? [`<button type="button" class="ghost" data-filter-clear="all">Clear all</button>`] : [];
   const hiddenChip = state.hiddenTypes.length && ["tickets", "board", "area"].includes(state.page)
     ? [`<span class="filter-chip active"><button type="button" class="chip-body" data-hidden-types-open="1">${escapeHtml(hiddenTypesLabel(state.hiddenTypes))}</button><button type="button" class="chip-clear" data-hidden-types-clear="1" aria-label="Show hidden ticket types">\u00D7</button></span>`] : [];
-  byId("filterChips").innerHTML = [...activeChips, ...hiddenChip, ...offered, ...clearAll].join("");
+  const hiddenStatusChip = state.hiddenStatuses.length && state.view === "board" && ["tickets", "board", "area"].includes(state.page)
+    ? [`<span class="filter-chip active"><button type="button" class="chip-body" data-hidden-statuses-open="1">${escapeHtml(hiddenColumnsLabel(state.hiddenStatuses, (status) => STATUS_LABELS[status]))}</button><button type="button" class="chip-clear" data-hidden-statuses-clear="1" aria-label="Show hidden board columns">×</button></span>`] : [];
+  byId("filterChips").innerHTML = [...activeChips, ...hiddenChip, ...hiddenStatusChip, ...offered, ...clearAll].join("");
 }
 
 function openCount(project) {
@@ -534,7 +549,8 @@ function columnHeaderHtml(column) {
   return `<th aria-sort="${sorted ? (state.sort.direction === "asc" ? "ascending" : "descending") : "none"}">${label}${caret}</th>`;
 }
 
-function renderBoard(tickets = state.tickets, statuses = state.meta.statuses) {
+function renderBoard(tickets = state.tickets, allStatuses = state.meta.statuses) {
+  const statuses = shownColumns(allStatuses, state.hiddenStatuses);
   const columns = Object.fromEntries(statuses.map((s) => [s, []]));
   orderedTickets(tickets).forEach((t) => { if (columns[t.status]) columns[t.status].push(t); });
   byId("main").innerHTML = `<div class="board">${statuses.map((status) => `
@@ -896,6 +912,8 @@ function setupControls() {
     if (!target) return;
     if (target.dataset.hiddenTypesOpen) byId("profileButton").click();
     else if (target.dataset.hiddenTypesClear) setHiddenTypes([]);
+    else if (target.dataset.hiddenStatusesOpen) byId("profileButton").click();
+    else if (target.dataset.hiddenStatusesClear) setHiddenStatuses([]);
     else if (target.dataset.filterOpen) openColumnMenu(target.dataset.filterOpen, target);
     else if (target.dataset.filterToggle) applyFilters(toggledFilter(state.filters, "open"));
     else if (target.dataset.filterClear === "all") applyFilters(emptyFilters());
@@ -960,6 +978,8 @@ async function start() {
   state.meta = await api("GET", "/api/meta");
   state.hiddenTypes = parseHiddenTypes(recall(STORAGE.hiddenTypes, "[]"), state.meta.types);
   renderTypeSettings();
+  state.hiddenStatuses = parseHiddenTypes(recall(STORAGE.hiddenStatuses, "[]"), state.meta.statuses);
+  renderStatusSettings();
   fillSelect(byId("sortField"), SORT_FIELDS.map((field) => field.id), (id) => SORT_FIELDS.find((field) => field.id === id).label, "Default");
   fillSelect(byId("newType"), state.meta.types);
   fillSelect(byId("newPriority"), state.meta.priorities);
