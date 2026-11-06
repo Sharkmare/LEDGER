@@ -21,4 +21,12 @@ function kbWithoutExpanded(open, id) {
   return open.filter((openId) => openId !== id);
 }
 
-if (typeof module !== "undefined") module.exports = { kbExpandedKey, kbParseExpanded, kbWithExpanded, kbWithoutExpanded };
+function kbAncestorsToReveal(viewedPageId, pageId, ancestorIds) {
+  return viewedPageId === pageId ? [] : ancestorIds;
+}
+
+function kbIsServerRejection(error) {
+  return !(error instanceof TypeError);
+}
+
+if (typeof module !== "undefined") module.exports = { kbExpandedKey, kbParseExpanded, kbWithExpanded, kbWithoutExpanded, kbAncestorsToReveal, kbIsServerRejection };

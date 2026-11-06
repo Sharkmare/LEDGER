@@ -62,8 +62,9 @@ async function loadKbLevel(spaceId, key, onError = (error) => toast(error.messag
 }
 
 async function loadExpandedKbLevel(spaceId, id) {
-  const loaded = await loadKbLevel(spaceId, String(id), () => {});
-  if (!loaded) kbSaveExpanded(spaceId, kbWithoutExpanded(kbExpanded(spaceId), id));
+  let rejected = false;
+  await loadKbLevel(spaceId, String(id), (error) => { rejected = kbIsServerRejection(error); });
+  if (rejected) kbSaveExpanded(spaceId, kbWithoutExpanded(kbExpanded(spaceId), id));
 }
 
 async function loadKbTree(spaceId, ancestorIds) {
@@ -137,16 +138,17 @@ async function loadKb() {
     if (space) {
       state.kb.spaceId = space.id;
       data.space = space;
-      await loadKbTree(space.id, []);
+      if (!(view === "page" && state.kb.pageId)) await loadKbTree(space.id, []);
     }
   }
   if (view === "page" && state.kb.pageId) {
     const first = kbLive.viewed !== state.kb.pageId;
     data.page = await guarded(() => api("GET", `/api/kb/pages/${state.kb.pageId}${first ? "?view=1" : ""}`));
     if (!data.page) { state.kb.view = "home"; state.kb.pageId = null; } else {
+      const reveal = kbAncestorsToReveal(kbLive.viewed, state.kb.pageId, data.page.breadcrumbs.map((crumb) => crumb.id));
       kbLive.viewed = state.kb.pageId;
       data.space = data.spaceMap[data.page.space.id];
-      await loadKbTree(data.page.space.id, data.page.breadcrumbs.map((crumb) => crumb.id));
+      await loadKbTree(data.page.space.id, reveal);
       state.kb.spaceId = data.page.space.id;
       kbRemember({ kind: data.page.page_type === "tool" ? "tool" : "page", id: data.page.id, title: data.page.title });
       if (state.kb.history) data.versions = (await guarded(() => api("GET", `/api/kb/pages/${data.page.id}/versions`))) || [];
