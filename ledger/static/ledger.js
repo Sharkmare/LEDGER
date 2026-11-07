@@ -565,8 +565,10 @@ function renderBoard(tickets = state.tickets, allStatuses = state.meta.statuses)
 
 function renderList(tickets = state.tickets) {
   if (!tickets.length) { byId("main").innerHTML = `<div class="empty"><p>No tickets match. Press c to create one.</p></div>`; return; }
-  byId("main").innerHTML = `<table class="list"><thead><tr>${listColumns().map(columnHeaderHtml).join("")}</tr></thead><tbody>
-    ${orderedTickets(tickets).map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)} ${questionBadgeHtml(t.open_questions)}${queueReasonsHtml(t.reasons, escapeHtml)}</td>
+  const shown = orderedTickets(tickets);
+  const shownKeys = shown.map((t) => t.key);
+  byId("main").innerHTML = `<table class="list"><thead><tr>${bulkHeaderCell(shownKeys)}${listColumns().map(columnHeaderHtml).join("")}</tr></thead><tbody>
+    ${shown.map((t) => `<tr data-key="${t.key}" tabindex="0" role="button">${bulkRowCell(t.key)}<td class="key">${t.key}</td><td>${escapeHtml(t.title)} ${questionBadgeHtml(t.open_questions)}${queueReasonsHtml(t.reasons, escapeHtml)}</td>
       <td><span class="pill" style="--pill-color:${statusColor(t.status)}">${STATUS_LABELS[t.status]}</span></td>
       <td><span class="pill" style="--pill-color:${priorityColor(t.priority)}">${icon("priority", t.priority)} ${PRIORITY_MARKS[t.priority]} ${t.priority}</span></td>
       <td>${icon("type", t.type)} ${t.type}</td><td>${escapeHtml(t.assignee)}</td>${state.page === "tickets" ? `<td>${t.labels.slice(0, 3).map((l) => `<span class="chip tint" style="--tint:${tagColor(l)}">${escapeHtml(l)}</span>`).join(" ")}</td>` : ""}<td>${t.estimate === null || t.estimate === undefined ? "" : formatNumber(t.estimate)}</td>
@@ -575,6 +577,7 @@ function renderList(tickets = state.tickets) {
   byId("main").querySelectorAll("tr[data-key]").forEach((row) => activateOnKey(row, () => openTicket(row.dataset.key)));
   byId("main").querySelectorAll(".sort-header[data-sort]").forEach((button) => button.addEventListener("click", () => setSort(nextSort(state.sort, button.dataset.sort))));
   byId("main").querySelectorAll("[data-filter-open]").forEach((button) => button.addEventListener("click", () => openColumnMenu(button.dataset.filterOpen, button)));
+  attachBulkEvents(shownKeys);
 }
 
 function barCard(title, counts, colorOf, labelOf = (v) => v) {

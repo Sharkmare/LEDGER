@@ -82,7 +82,7 @@ The description can be pasted JSON, a file on this machine (`.json`, `.yaml`, `.
 
 ## Web interface
 
-A top bar with global search, Create, refresh, shortcuts, theme and a profile menu where you set the name recorded in history. A side navigator with a filter box lists saved views, the organisation's areas and boards, projects, planning, dashboards and administration. Administration manages the organisation, projects, areas, boards, iterations, tags and templates in one place. Lists and boards sort by key (in number order, so REO-2 comes before REO-10), title, status, priority, type, assignee, estimate or updated, from the column headings or the Sort control on the tickets page and on board pages, and the choice is remembered. Filters live in the list headings: the arrow beside Status, Priority, Type, Assignee or Tags opens a menu of values, and the Status menu also hides done work. Above a board the same menus are chips. Active filters show as chips you can clear one by one or all at once. There is a light and a dark theme and the page refreshes itself every few seconds. On a narrow screen the navigator slides in.
+A top bar with global search, Create, refresh, shortcuts, theme and a profile menu where you set the name recorded in history. A side navigator with a filter box lists saved views, the organisation's areas and boards, projects, planning, dashboards and administration. Administration manages the organisation, projects, areas, boards, iterations, tags and templates in one place. Lists and boards sort by key (in number order, so REO-2 comes before REO-10), title, status, priority, type, assignee, estimate or updated, from the column headings or the Sort control on the tickets page and on board pages, and the choice is remembered. Filters live in the list headings: the arrow beside Status, Priority, Type, Assignee or Tags opens a menu of values, and the Status menu also hides done work. Above a board the same menus are chips. Active filters show as chips you can clear one by one or all at once. The list view has a checkbox column: tick rows (Shift-click for a range, the header box for every shown row) and a bar appears at the bottom with Move to, Priority, Assign, Add tag, Cancel (asks for an optional reason, added as a comment) and Clear. The selection survives the automatic refresh and is cleared after an action; clicking a row still opens it. There is a light and a dark theme and the page refreshes itself every few seconds. On a narrow screen the navigator slides in.
 
 Press `?` for the shortcuts: `c` create, `/` search, `s` `b` `l` for the views, `n` to show or hide the navigator, `r` refresh, `Enter` opens the focused ticket, `Esc` closes the drawer. A ticket opens directly from `http://127.0.0.1:6680/#APP-1`, and Ctrl K finds anything. The API reference with try-it-out is at `/docs`.
 
@@ -106,6 +106,8 @@ python ledger_cli.py mine
 python ledger_cli.py show APP-1
 python ledger_cli.py move APP-1 in_progress
 python ledger_cli.py done APP-1 --comment "Fixed in the next release"
+python ledger_cli.py bulk APP-1 APP-2 APP-3 --status done --add-label shipped --comment "Released"
+python ledger_cli.py --json list --project APP --open --label stale | python ledger_cli.py bulk --keys-from - --status cancelled
 python ledger_cli.py add APP "Pick a payment provider" --question "Which provider?" --question "Refunds in v1?"
 python ledger_cli.py question ask APP-1 "Which currency first?"
 python ledger_cli.py question list --project APP
@@ -145,9 +147,13 @@ python ledger_cli.py --as ann settings
 python ledger_cli.py --as ann setting-clear hidden_statuses
 ```
 
+`bulk KEY KEY ...` applies `--status`, `--priority`, `--type`, `--assignee`, `--parent`, `--area`, `--iteration`, `--add-label`, `--rm-label` and `--comment` to every key (at most 200). Keys can also come from standard input with `--keys-from -`, either the output of `list --json` or one key per line. It prints `updated N, unchanged N, failed N` with one line per failed ticket and exits 1 if any ticket failed.
+
 ## HTTP API
 
 `GET /api` lists the endpoints, `GET /api/meta` lists the allowed values, `GET /api/openapi.json` is an OpenAPI 3 description and `/docs` is an interactive reference. Requests and responses are JSON, errors are `{"error": "..."}` with a 4xx status, and writes accept an `X-Ledger-Actor` header that names who made the change. A ticket created with a `source` value, such as `github:123`, can be found again with `GET /api/tickets?source=github:123` and cannot be created twice, which makes importers safe to re-run. `GET /api/tickets` returns at most `limit` tickets (default 500) and reports the full count in the `X-Total-Count` header.
+
+`POST /api/tickets/bulk` with `{"keys": [...], "changes": {...}, "comment": "..."}` applies the same changes to up to 200 tickets (duplicates are ignored). `changes` takes any field a ticket edit accepts, plus `add_labels` and `remove_labels`, which adjust each ticket's own labels. The comment, if given, is added to every ticket that did not fail, including ones already at the new values. It is not atomic: the reply is `{"updated": [...], "unchanged": [...], "failed": [{"key", "error"}]}` and a failing ticket never stops the others. An empty key list, more than 200 keys, or neither changes nor a comment is refused with 400.
 
 ## Fonts
 

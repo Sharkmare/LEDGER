@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from . import kb, metrics, people_spec, questions, store, usersettings
+from . import bulk, kb, metrics, people_spec, questions, store, usersettings
 
 API_VERSION = "1.2.0"
 KEY_EXAMPLE = "APP-1"
@@ -86,6 +86,15 @@ def schemas() -> dict:
             "progress": {"type": "object", "description": "All descendants except cancelled ones", "properties": {
                 "total": {"type": "integer"}, "done": {"type": "integer"}, "points": {"type": "number"}, "points_done": {"type": "number"}}}}},
         "TicketSummary": {"type": "object", "properties": ticket_properties},
+        "BulkChange": {"type": "object", "required": ["keys"], "properties": {
+            "keys": {"type": "array", "minItems": 1, "maxItems": bulk.MAX_BULK_KEYS, "items": {"type": "string"}, "example": ["APP-1", "APP-2"]},
+            "changes": {"type": "object", "description": "Any field a ticket edit accepts, plus add_labels and remove_labels lists applied to each ticket's own labels",
+                        "example": {"status": "done", "add_labels": ["shipped"]}},
+            "comment": {"type": "string", "description": "Added to every ticket in the request that did not fail, including unchanged ones"}}},
+        "BulkResult": {"type": "object", "properties": {
+            "updated": {"type": "array", "items": {"type": "string"}},
+            "unchanged": {"type": "array", "items": {"type": "string"}},
+            "failed": {"type": "array", "items": {"type": "object", "properties": {"key": {"type": "string"}, "error": {"type": "string"}}}}}},
         "NewTicket": {"type": "object", "required": ["project", "title"], "properties": {
             "project": {"type": "string", "example": "APP"},
             "title": {"type": "string", "maxLength": store.MAX_TITLE_CHARS, "example": "Login fails on empty password"},
@@ -192,6 +201,10 @@ def paths() -> dict:
             "post": {"tags": ["Tickets"], "summary": "Create a ticket", "operationId": "createTicket",
                 "requestBody": json_body(ref("NewTicket")),
                 "responses": {"201": json_response("The new ticket", ref("Ticket")), "400": ERRORS["400"], "404": ERRORS["404"]}}},
+        "/api/tickets/bulk": {
+            "post": {"tags": ["Tickets"], "summary": "Apply the same changes to up to 200 tickets; not atomic, one failure never stops the rest", "operationId": "bulkUpdateTickets",
+                "requestBody": json_body(ref("BulkChange")),
+                "responses": {"200": json_response("Which tickets were updated, left unchanged or failed", ref("BulkResult")), "400": ERRORS["400"]}}},
         "/api/tickets/{ticket_key}": {
             "get": {"tags": ["Tickets"], "summary": "Read a ticket with comments, sub-tickets and links", "operationId": "getTicket",
                 "parameters": [key_parameter()],

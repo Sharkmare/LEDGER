@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .web import App, HTTPError, abort, g, jsonify, request, send_from_directory
 
-from . import kb, manage, metrics, openapi, organise, people, questions, store, usersettings
+from . import bulk, kb, manage, metrics, openapi, organise, people, questions, store, usersettings
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 6680
@@ -28,6 +28,7 @@ API_HELP = {
         "GET  /api/projects | POST {key,name,description}",
         "GET  /api/tickets?project=&status=&assignee=&type=&priority=&label=&q=&source=&open=1&limit=",
         "POST /api/tickets {project,title,body,type,status,priority,assignee,labels,parent,due,source}",
+        "POST /api/tickets/bulk {keys,changes,comment}   same changes on up to 200 tickets; changes may add add_labels/remove_labels; not atomic",
         "GET  /api/tickets/<KEY-N> | PATCH {field: value} | DELETE",
         "POST /api/tickets/<KEY-N>/comments {body}",
         "POST /api/tickets/<KEY-N>/questions {text}",
@@ -220,6 +221,11 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
     @app.get("/api/queue")
     def person_queue():
         return jsonify(people.queue(connection, request.args.get("person") or actor()))
+
+    @app.post("/api/tickets/bulk")
+    def bulk_tickets():
+        payload = body_json()
+        return jsonify(bulk.update(connection, payload.get("keys"), payload.get("changes"), actor(), payload.get("comment", "")))
 
     @app.get("/api/tickets/<ticket_key>")
     def ticket(ticket_key):

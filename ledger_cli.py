@@ -10,6 +10,8 @@ import urllib.parse
 import urllib.request
 from datetime import datetime
 
+from ledger import bulk_cli
+
 DEFAULT_BASE = "http://127.0.0.1:6680"
 REQUEST_TIMEOUT_SECONDS = 15
 LIST_FILTERS = ("project", "status", "assignee", "type", "priority", "label", "source", "area", "iteration")
@@ -170,6 +172,7 @@ def add_ticket_commands(commands) -> None:
         edit.add_argument(f"--{name}")
     edit.add_argument("--add-label", action="append", default=[])
     edit.add_argument("--rm-label", action="append", default=[])
+    bulk_cli.add_parser(commands)
     comment = commands.add_parser("comment", help="add a comment")
     comment.add_argument("key")
     comment.add_argument("body")
@@ -453,6 +456,8 @@ def run_ticket_command(arguments: argparse.Namespace):
     if command == "edit":
         existing = call(base, "GET", f"/api/tickets/{arguments.key}", actor)["labels"] if (arguments.add_label or arguments.rm_label) else []
         return call(base, "PATCH", f"/api/tickets/{arguments.key}", actor, edit_changes(arguments, existing))
+    if command == "bulk":
+        return bulk_cli.run(arguments, base, actor, call)
     if command == "comment":
         return call(base, "POST", f"/api/tickets/{arguments.key}/comments", actor, {"body": arguments.body})
     if command == "link":
@@ -943,6 +948,8 @@ def render_ticket_command(command: str, result) -> None:
         print_events(result)
     elif command == "show":
         print_ticket(result, result.get("events"))
+    elif command == "bulk":
+        bulk_cli.render(result)
     elif command in ("add", "move", "done", "assign", "edit", "comment", "link"):
         print_ticket(result)
     elif command == "stats":
@@ -965,6 +972,9 @@ def main(argv: list[str] | None = None) -> None:
         render_planning(arguments, result)
     else:
         render_ticket_command(arguments.command, result)
+    status = bulk_cli.exit_status(arguments.command, result)
+    if status:
+        sys.exit(status)
 
 
 if __name__ == "__main__":

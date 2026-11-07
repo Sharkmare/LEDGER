@@ -1,0 +1,7 @@
+table.list .bulk-cell { width: 28px; padding-right: 0; }
+table.list tr.bulk-selected td { background: var(--selected); }
+.bulk-bar { position: sticky; bottom: 0; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 10px 14px; margin-top: 8px; background: var(--panel-raised); border: 1px solid var(--line); border-radius: var(--radius); z-index: 5; }
+.bulk-bar label { display: inline-flex; align-items: center; gap: 6px; color: var(--muted); }
+.bulk-bar .bulk-field { display: inline-flex; gap: 4px; }
+.bulk-bar input { width: 130px; }
+.bulk-bar .danger { color: var(--danger); border-color: var(--danger); }
