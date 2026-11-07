@@ -45,10 +45,11 @@ Tickets             any type, with a parent and sub-tickets to any depth
   the navigator and as a count button in the top bar. The `unassigned` figure in stats counts open tickets only.
 - **Hidden board columns** are a setting per person for every status, on every board: open the profile menu and tick the statuses to hide, for example Done
   and Cancelled. The columns are left off the ticket board, area boards and board pages, and a `Hiding Done, Cancelled` chip in the filter bar says so and clears
-  them with one click. The tickets stay in list views and counts. The choice is saved in this browser.
+  them with one click. The tickets stay in list views and counts. The choice follows your name: it is kept on the server
+  (see Saved view settings below) and cached in the browser.
 - **Hidden ticket types** are a setting per person: open the profile menu (top right) and tick the types to hide, for example chore or spike.
   Hidden types stay out of the board and list views, area pages and board pages, and a `Hiding bug, chore` chip in the filter bar says so and clears
-  them with one click. The choice is saved in this browser. The API takes `exclude_type=bug,chore` on `GET /api/tickets`, which also keeps the
+  them with one click. The choice follows your name, like hidden columns. The API takes `exclude_type=bug,chore` on `GET /api/tickets`, which also keeps the
   total count right.
 - **Status colors** are chosen so no two statuses look alike. Cancelled is pink, apart from the grey of Backlog, so a cancelled ticket is not
   mistaken for open work; a test fails if two status colors drift too close.
@@ -84,6 +85,10 @@ The description can be pasted JSON, a file on this machine (`.json`, `.yaml`, `.
 A top bar with global search, Create, refresh, shortcuts, theme and a profile menu where you set the name recorded in history. A side navigator with a filter box lists saved views, the organisation's areas and boards, projects, planning, dashboards and administration. Administration manages the organisation, projects, areas, boards, iterations, tags and templates in one place. Lists and boards sort by key (in number order, so REO-2 comes before REO-10), title, status, priority, type, assignee, estimate or updated, from the column headings or the Sort control on the tickets page and on board pages, and the choice is remembered. Filters live in the list headings: the arrow beside Status, Priority, Type, Assignee or Tags opens a menu of values, and the Status menu also hides done work. Above a board the same menus are chips. Active filters show as chips you can clear one by one or all at once. There is a light and a dark theme and the page refreshes itself every few seconds. On a narrow screen the navigator slides in.
 
 Press `?` for the shortcuts: `c` create, `/` search, `s` `b` `l` for the views, `n` to show or hide the navigator, `r` refresh, `Enter` opens the focused ticket, `Esc` closes the drawer. A ticket opens directly from `http://127.0.0.1:6680/#APP-1`, and Ctrl K finds anything. The API reference with try-it-out is at `/docs`.
+
+### Saved view settings
+
+Hidden ticket types, hidden board columns and the list sort follow your name, not the browser. The server keeps them per name (compared in lowercase), so a second browser, a cleared browser or another machine shows the same choices once you enter your name in the profile menu. On load and whenever you change the name, the page asks the server: a value the server has wins and is copied into the browser as an offline cache; a choice that only this browser has is uploaded once, so nothing set before this feature is lost; with neither, the default applies. Changing a setting saves it to the server and the browser, and a toast says if the server refused it. If the server cannot be reached, the browser copy is used silently. Settings need a name: the `anonymous` name is refused. `GET /api/settings` returns your settings, `PUT /api/settings/<key>` with `{"value": ...}` sets one and `DELETE /api/settings/<key>` clears it. The keys are `hidden_types` (a list of ticket types), `hidden_statuses` (a list of statuses) and `sort` (`{"field": "priority", "direction": "desc"}`, with an empty field for the default order). Anything else is refused with a message.
 
 ## Command line
 
@@ -135,6 +140,9 @@ python ledger_cli.py find deploy
 python ledger_cli.py kb-tool add Packer --kind cli --invoke "packer build FILE" --path C:/tools/packer.exe
 python ledger_cli.py kb-tool add Pets --kind api --location external --openapi-url https://pets.example.com/openapi.json
 python ledger_cli.py kb-tool spec 7
+python ledger_cli.py --as ann setting-set hidden_statuses '["done","cancelled"]'
+python ledger_cli.py --as ann settings
+python ledger_cli.py --as ann setting-clear hidden_statuses
 ```
 
 ## HTTP API
@@ -157,6 +165,7 @@ The interface uses the system font stack. To use other fonts, put a `fonts.css` 
 | `ledger/kb.py` | Spaces, pages, versions, search, tools and their OpenAPI descriptions |
 | `ledger/web.py` | The HTTP layer: router, request and response, threaded server, test client |
 | `ledger/miniyaml.py` | The YAML reader used for OpenAPI files |
+| `ledger/usersettings.py` | Per-person view settings: allowed keys, validation, storage |
 | `ledger/openapi.py` | The OpenAPI description |
 | `ledger/server.py` | HTTP server and API |
 | `ledger/static/` | The web interface |

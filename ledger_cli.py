@@ -15,7 +15,8 @@ REQUEST_TIMEOUT_SECONDS = 15
 LIST_FILTERS = ("project", "status", "assignee", "type", "priority", "label", "source", "area", "iteration")
 EDIT_FIELDS = ("title", "body", "type", "priority", "assignee", "labels", "due", "status", "start", "estimate", "area", "iteration")
 PLANNING_COMMANDS = ("overview", "tree", "plan", "roadmap", "project-set", "question", "area", "board", "iteration", "tag", "template", "dashboard", "metric",
-                     "kb-space", "kb-page", "kb-tool", "kb-search", "find", "people", "person-add", "person-rm", "queue")
+                     "kb-space", "kb-page", "kb-tool", "kb-search", "find", "people", "person-add", "person-rm", "queue",
+                     "settings", "setting-set", "setting-clear")
 
 
 def default_actor() -> str:
@@ -368,6 +369,12 @@ def add_planning_commands(commands) -> None:
 
     dashboard.add_parser("defaults", help="add the built-in dashboards that are missing")
     dashboard.add_parser("rm").add_argument("id")
+
+    commands.add_parser("settings", help="your saved view settings (hidden types, hidden columns, sort)")
+    setting_set = commands.add_parser("setting-set", help="save one view setting for --as")
+    setting_set.add_argument("key")
+    setting_set.add_argument("value", help="JSON, for example '[\"done\"]' or '{\"field\":\"priority\",\"direction\":\"desc\"}'")
+    commands.add_parser("setting-clear", help="clear one view setting for --as").add_argument("key")
 
     metric = commands.add_parser("metric", help="measure one thing now")
     metric.add_argument("kind", choices=["count", "group", "trend", "burndown", "cycle", "aging", "workload", "velocity", "overdue"])
@@ -792,6 +799,16 @@ def run_planning_command(arguments: argparse.Namespace):
         if not changes:
             raise SystemExit("ledger: project-set needs at least one field, for example --lead ann")
         return call(base, "PATCH", f"/api/projects/{arguments.key}", actor, changes)
+    if command == "settings":
+        return call(base, "GET", "/api/settings", actor)
+    if command == "setting-set":
+        try:
+            value = json.loads(arguments.value)
+        except ValueError:
+            raise SystemExit("ledger: the value must be JSON, for example '[\"done\"]'") from None
+        return call(base, "PUT", f"/api/settings/{quoted(arguments.key)}", actor, {"value": value})
+    if command == "setting-clear":
+        return call(base, "DELETE", f"/api/settings/{quoted(arguments.key)}", actor)
     runners = {"question": run_question, "area": run_area, "board": run_board, "iteration": run_iteration, "tag": run_tag, "template": run_template,
                "dashboard": run_dashboard, "metric": run_metric}
     return runners[command](arguments, base, actor)

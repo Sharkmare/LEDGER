@@ -233,7 +233,7 @@ function filterValues(fieldId) {
 
 function setHiddenTypes(hidden) {
   state.hiddenTypes = hidden;
-  remember(STORAGE.hiddenTypes, JSON.stringify(hidden));
+  saveSetting("hidden_types", hidden);
   renderTypeSettings();
   refresh();
 }
@@ -246,7 +246,7 @@ function renderTypeSettings() {
 
 function setHiddenStatuses(hidden) {
   state.hiddenStatuses = hidden;
-  remember(STORAGE.hiddenStatuses, JSON.stringify(hidden));
+  saveSetting("hidden_statuses", hidden);
   renderStatusSettings();
   render();
 }
@@ -528,7 +528,7 @@ function orderedTickets(tickets) {
 
 function setSort(sort) {
   state.sort = sort;
-  remember(STORAGE.sort, JSON.stringify(sort));
+  saveSetting("sort", sort);
   render();
 }
 
@@ -945,7 +945,7 @@ function setupControls() {
   byId("profileMenu").addEventListener("click", (event) => event.stopPropagation());
   document.addEventListener("click", closeProfileMenu);
   byId("actorInput").addEventListener("input", updateProfileButton);
-  byId("actorInput").addEventListener("change", () => { remember(STORAGE.actor, actorName()); if (state.nav === "mine") refresh(); });
+  byId("actorInput").addEventListener("change", () => { remember(STORAGE.actor, actorName()); syncSettings().then(() => refresh()); });
   document.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLowerCase() === "k") { event.preventDefault(); openFinder(); return; }
     if (event.key === "Escape") {
@@ -1008,6 +1008,7 @@ async function start() {
   if (state.page === "area" && !state.areas.some((a) => a.id === state.areaId)) state.page = "tickets";
   if (state.page === "board" && !state.boards.some((b) => b.id === state.boardId)) state.page = "tickets";
   if (state.page === "tickets" && !state.project && state.view === "plan") state.view = "board";
+  await syncSettings();
   setupControls();
   setupDialogs();
   await loadIcons();

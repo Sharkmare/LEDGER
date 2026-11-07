@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .web import App, HTTPError, abort, g, jsonify, request, send_from_directory
 
-from . import kb, manage, metrics, openapi, organise, people, questions, store
+from . import kb, manage, metrics, openapi, organise, people, questions, store, usersettings
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 6680
@@ -55,6 +55,7 @@ API_HELP = {
         "GET /api/kb/tools?kind=&location=&q=  GET /api/kb/pages/<id>/openapi?refresh=1   the Tools category and a tool's OpenAPI description",
         "GET|POST /api/people | DELETE /api/people/<name>   registered assignees; tickets can only be assigned to these",
         "GET  /api/queue?person=NAME           open tickets assigned to a person, labelled assigned, review or question",
+        "GET /api/settings  PUT|DELETE /api/settings/<key>   per-person view settings (hidden_types, hidden_statuses, sort), keyed by X-Ledger-Actor",
         "GET  /api/openapi.json                OpenAPI 3 description; interactive page at /docs",
     ],
 }
@@ -68,6 +69,7 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
         manage.seed_default_templates(connection)
         metrics.seed_default_dashboards(connection)
     kb.ensure_tools_space(connection)
+    usersettings.ensure_table(connection)
     fonts_directory = Path(font_dir or os.environ.get("LEDGER_FONT_DIR") or DEFAULT_FONT_DIR)
     database_lock = threading.RLock()
 
@@ -142,6 +144,21 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
         return jsonify({"types": store.TICKET_TYPES, "statuses": store.STATUSES, "priorities": store.PRIORITIES,
                         "closed_statuses": store.CLOSED_STATUSES, "link_kinds": store.LINK_KINDS,
                         "editable_fields": store.EDITABLE_FIELDS})
+
+    @app.get("/api/settings")
+    def my_settings():
+        return jsonify(usersettings.list_settings(connection, actor()))
+
+    @app.put("/api/settings/<key>")
+    def put_setting(key):
+        payload = body_json()
+        if "value" not in payload:
+            raise store.LedgerError("request body needs a value")
+        return jsonify(usersettings.set_setting(connection, actor(), key, payload["value"]))
+
+    @app.delete("/api/settings/<key>")
+    def delete_setting(key):
+        return jsonify(usersettings.clear_setting(connection, actor(), key))
 
     @app.get("/api/projects")
     def projects():

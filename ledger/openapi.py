@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from . import kb, metrics, people_spec, questions, store
+from . import kb, metrics, people_spec, questions, store, usersettings
 
 API_VERSION = "1.2.0"
 KEY_EXAMPLE = "APP-1"
@@ -591,7 +591,7 @@ def build_spec() -> dict:
         "servers": [{"url": "/"}],
         "tags": [{"name": "Service"}, {"name": "Organisation"}, {"name": "Projects"}, {"name": "Areas"}, {"name": "Boards"},
                  {"name": "Planning"}, {"name": "Tickets"}, {"name": "Questions"}, {"name": "Tags"}, {"name": "Templates"}, {"name": "Reports"},
-                 {"name": "Dashboards"}, {"name": "Metrics"}, {"name": "Knowledge"}, {"name": "Tools"}, {"name": "People"}],
-        "paths": {**paths(), **organisation_paths(), **dashboard_paths(), **kb_paths(), **people_spec.paths()},
-        "components": {"schemas": {**schemas(), **organisation_schemas(), **dashboard_schemas(), **kb_schemas(), **people_spec.schemas()}},
+                 {"name": "Dashboards"}, {"name": "Metrics"}, {"name": "Knowledge"}, {"name": "Tools"}, {"name": "People"}, {"name": "Settings"}],
+        "paths": {**paths(), **organisation_paths(), **dashboard_paths(), **kb_paths(), **people_spec.paths(), **usersettings.openapi_paths()},
+        "components": {"schemas": {**schemas(), **organisation_schemas(), **dashboard_schemas(), **kb_schemas(), **people_spec.schemas(), **usersettings.openapi_schemas()}},
     }
