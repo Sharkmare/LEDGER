@@ -10,6 +10,7 @@
 <link rel="stylesheet" href="/static/pages.css">
 <link rel="stylesheet" href="/static/kb.css">
 <link rel="stylesheet" href="/static/bulk.css">
+<link rel="stylesheet" href="/static/similar.css">
 </head>
 <body>
 <header class="topbar">
@@ -79,6 +80,7 @@
       <label>Template <select name="template" id="newTemplate"></select></label>
     </div>
     <label>Title <input name="title" id="newTitle" required maxlength="200" autocomplete="off"></label>
+    <div class="similar" id="newSimilar" aria-live="polite" hidden></div>
     <label>Description <textarea name="body" id="newBody" rows="4"></textarea></label>
     <div class="row">
       <label>Type <select name="type" id="newType"></select></label>
@@ -155,6 +157,7 @@
 <script src="/static/usersettings.js"></script>
 <script src="/static/settingsync.js"></script>
 <script src="/static/bulk.js"></script>
+<script src="/static/similar.js"></script>
 <script src="/static/kb.js"></script>
 <script src="/static/ledger.js"></script>
 </body>

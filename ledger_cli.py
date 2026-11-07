@@ -141,6 +141,7 @@ def add_ticket_commands(commands) -> None:
     add.add_argument("--iteration", help="iteration id or name")
     add.add_argument("--template", help="template id; its values fill every field you leave out")
     add.add_argument("--source", help="stable external id; a second add with the same source is refused")
+    add.add_argument("--no-similar-check", action="store_true", help="do not look for open tickets with a similar title first")
     add.add_argument("--question", action="append", dest="questions", help="an open question to ask on the new ticket; repeat for more")
 
     list_command = commands.add_parser("list", help="list tickets")
@@ -425,6 +426,25 @@ def edit_changes(arguments: argparse.Namespace, existing_labels: list[str]) -> d
     return changes
 
 
+SIMILAR_LIMIT = 3
+
+
+def find_similar(base: str, actor: str, project: str, title: str) -> list:
+    query = urllib.parse.urlencode({"project": project, "title": title, "limit": SIMILAR_LIMIT})
+    return call(base, "GET", f"/api/tickets/similar?{query}", actor)
+
+
+def warn_similar(base: str, actor: str, project: str, title: str) -> None:
+    try:
+        matches = find_similar(base, actor, project, title)
+    except SystemExit:
+        return
+    if matches:
+        print("Similar open tickets:", file=sys.stderr)
+        for match in matches[:SIMILAR_LIMIT]:
+            print(f"{match['key']} {match['title']} ({round(match['score'] * 100)}%)", file=sys.stderr)
+
+
 def run_ticket_command(arguments: argparse.Namespace):
     base, actor, command = arguments.base, arguments.actor, arguments.command
     if command == "projects":
@@ -435,6 +455,8 @@ def run_ticket_command(arguments: argparse.Namespace):
     if command == "add":
         fields = ("project", "title", "body", "type", "status", "priority", "assignee", "labels", "parent", "due", "start", "estimate", "area",
                   "iteration", "template", "source", "questions")
+        if not arguments.no_similar_check:
+            warn_similar(base, actor, arguments.project, arguments.title)
         return call(base, "POST", "/api/tickets", actor, drop_empty({name: getattr(arguments, name) for name in fields}))
     if command in ("list", "mine"):
         return call(base, "GET", list_path(arguments), actor)

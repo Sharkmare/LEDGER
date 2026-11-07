@@ -205,6 +205,13 @@ def paths() -> dict:
             "post": {"tags": ["Tickets"], "summary": "Apply the same changes to up to 200 tickets; not atomic, one failure never stops the rest", "operationId": "bulkUpdateTickets",
                 "requestBody": json_body(ref("BulkChange")),
                 "responses": {"200": json_response("Which tickets were updated, left unchanged or failed", ref("BulkResult")), "400": ERRORS["400"]}}},
+        "/api/tickets/similar": {"get": operation(
+            "Tickets", "Open tickets of a project whose title is close to a given title, best first", "similarTickets",
+            {"200": json_response("Up to limit matches scoring at least 0.55", {"type": "array", "items": {"type": "object", "properties": {
+                "key": {"type": "string"}, "title": {"type": "string"}, "status": {"type": "string"},
+                "score": {"type": "number", "minimum": 0, "maximum": 1}}}}), "400": ERRORS["400"], "404": ERRORS["404"]},
+            [{**query("project", "Project key"), "required": True}, {**query("title", "The title to compare"), "required": True},
+             query("limit", "Maximum matches returned", {"type": "integer", "default": 3, "maximum": 10})])},
         "/api/tickets/{ticket_key}": {
             "get": {"tags": ["Tickets"], "summary": "Read a ticket with comments, sub-tickets and links", "operationId": "getTicket",
                 "parameters": [key_parameter()],

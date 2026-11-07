@@ -84,6 +84,8 @@ The description can be pasted JSON, a file on this machine (`.json`, `.yaml`, `.
 
 A top bar with global search, Create, refresh, shortcuts, theme and a profile menu where you set the name recorded in history. A side navigator with a filter box lists saved views, the organisation's areas and boards, projects, planning, dashboards and administration. Administration manages the organisation, projects, areas, boards, iterations, tags and templates in one place. Lists and boards sort by key (in number order, so REO-2 comes before REO-10), title, status, priority, type, assignee, estimate or updated, from the column headings or the Sort control on the tickets page and on board pages, and the choice is remembered. Filters live in the list headings: the arrow beside Status, Priority, Type, Assignee or Tags opens a menu of values, and the Status menu also hides done work. Above a board the same menus are chips. Active filters show as chips you can clear one by one or all at once. The list view has a checkbox column: tick rows (Shift-click for a range, the header box for every shown row) and a bar appears at the bottom with Move to, Priority, Assign, Add tag, Cancel (asks for an optional reason, added as a comment) and Clear. The selection survives the automatic refresh and is cleared after an action; clicking a row still opens it. There is a light and a dark theme and the page refreshes itself every few seconds. On a narrow screen the navigator slides in.
 
+In the Create ticket dialog, typing a title of eight characters or more shows a "Similar open tickets" list under the title field after a short pause, with each ticket's key, title and status linking to it in a new tab; the list is hidden when nothing is close and never blocks creating the ticket.
+
 Press `?` for the shortcuts: `c` create, `/` search, `s` `b` `l` for the views, `n` to show or hide the navigator, `r` refresh, `Enter` opens the focused ticket, `Esc` closes the drawer. A ticket opens directly from `http://127.0.0.1:6680/#APP-1`, and Ctrl K finds anything. The API reference with try-it-out is at `/docs`.
 
 ### Saved view settings
@@ -92,7 +94,7 @@ Hidden ticket types, hidden board columns and the list sort follow your name, no
 
 ## Command line
 
-`ledger_cli.py` uses only the standard library. Add `--json` to any command for machine output. Set your name with `--as NAME` or `LEDGER_ACTOR`; it defaults to your system user name. Point at another server with `--base` or `LEDGER_URL`. `python ledger_cli.py --help` lists every command.
+`ledger_cli.py` uses only the standard library. Add `--json` to any command for machine output. Set your name with `--as NAME` or `LEDGER_ACTOR`; it defaults to your system user name. Point at another server with `--base` or `LEDGER_URL`. `python ledger_cli.py --help` lists every command. `add` first asks the server for open tickets with a similar title and prints up to three of them to stderr under `Similar open tickets:` as `KEY title (score%)`, then creates the ticket anyway; `--no-similar-check` skips the lookup, and stdout and `--json` output are unchanged.
 
 ```bash
 python ledger_cli.py new-project APP "My app" --tags games
@@ -100,6 +102,7 @@ python ledger_cli.py projects --tag games
 python ledger_cli.py project-set APP --tags games,tools
 python ledger_cli.py add APP "Login fails on empty password" --type bug --priority high --labels auth
 python ledger_cli.py add APP "Crash on start" --template 1 --area "Platform" --iteration "Sprint 1" --estimate 3
+python ledger_cli.py add APP "Login fails when empty" --no-similar-check
 python ledger_cli.py list --project APP --open
 python ledger_cli.py list -q login --area Platform
 python ledger_cli.py mine
@@ -151,7 +154,7 @@ python ledger_cli.py --as ann setting-clear hidden_statuses
 
 ## HTTP API
 
-`GET /api` lists the endpoints, `GET /api/meta` lists the allowed values, `GET /api/openapi.json` is an OpenAPI 3 description and `/docs` is an interactive reference. Requests and responses are JSON, errors are `{"error": "..."}` with a 4xx status, and writes accept an `X-Ledger-Actor` header that names who made the change. A ticket created with a `source` value, such as `github:123`, can be found again with `GET /api/tickets?source=github:123` and cannot be created twice, which makes importers safe to re-run. `GET /api/tickets` returns at most `limit` tickets (default 500) and reports the full count in the `X-Total-Count` header.
+`GET /api` lists the endpoints, `GET /api/meta` lists the allowed values, `GET /api/openapi.json` is an OpenAPI 3 description and `/docs` is an interactive reference. Requests and responses are JSON, errors are `{"error": "..."}` with a 4xx status, and writes accept an `X-Ledger-Actor` header that names who made the change. A ticket created with a `source` value, such as `github:123`, can be found again with `GET /api/tickets?source=github:123` and cannot be created twice, which makes importers safe to re-run. `GET /api/tickets` returns at most `limit` tickets (default 500) and reports the full count in the `X-Total-Count` header. `GET /api/tickets/similar?project=KEY&title=...&limit=3` returns the open tickets of that project whose title is closest to `title`, best first, each as `{key, title, status, score}` with a score from 0 to 1 and nothing below 0.55; creating a ticket is never refused because of a match.
 
 `POST /api/tickets/bulk` with `{"keys": [...], "changes": {...}, "comment": "..."}` applies the same changes to up to 200 tickets (duplicates are ignored). `changes` takes any field a ticket edit accepts, plus `add_labels` and `remove_labels`, which adjust each ticket's own labels. The comment, if given, is added to every ticket that did not fail, including ones already at the new values. It is not atomic: the reply is `{"updated": [...], "unchanged": [...], "failed": [{"key", "error"}]}` and a failing ticket never stops the others. An empty key list, more than 200 keys, or neither changes nor a comment is refused with 400.
 
@@ -173,6 +176,7 @@ The interface uses the system font stack. To use other fonts, put a `fonts.css` 
 | `ledger/miniyaml.py` | The YAML reader used for OpenAPI files |
 | `ledger/usersettings.py` | Per-person view settings: allowed keys, validation, storage |
 | `ledger/openapi.py` | The OpenAPI description |
+| `ledger/similar.py` | Finds open tickets with a title close to a new one |
 | `ledger/server.py` | HTTP server and API |
 | `ledger/static/` | The web interface |
 | `ledger_cli.py` | Command line client |

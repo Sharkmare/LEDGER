@@ -873,6 +873,7 @@ function setupDialogs() {
   byId("newTemplate").addEventListener("change", (event) => applyTemplateToDialog(event.target.value));
   byId("newTitle").addEventListener("input", (event) => { delete event.target.dataset.fromTemplate; });
   byId("helpClose").addEventListener("click", () => byId("helpDialog").close());
+  setupSimilarCheck();
 }
 
 function applyTheme(theme) { document.documentElement.dataset.theme = theme; }
