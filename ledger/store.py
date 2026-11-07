@@ -299,6 +299,8 @@ def _migrate(connection: sqlite3.Connection) -> None:
                 connection.execute(f"ALTER TABLE {table} ADD COLUMN {name} {definition}")
     connection.execute("CREATE INDEX IF NOT EXISTS kb_pages_translation ON kb_pages(translation_of)")
     connection.commit()
+    from . import people
+    people.ensure(connection)
 
 
 def parse_ticket_key(ticket_key: str) -> tuple[str, int]:
@@ -588,6 +590,8 @@ def create_ticket(
     status = _require_choice("status", status, STATUSES)
     priority = _require_choice("priority", priority, PRIORITIES)
     parent_id = _resolve_parent_id(connection, parent_key, None)
+    from . import people
+    assignee = people.resolve(connection, assignee)
     number = project["next_number"]
     connection.execute("UPDATE projects SET next_number = ? WHERE key = ?", (number + 1, project["key"]))
     now = time.time()
@@ -600,7 +604,7 @@ def create_ticket(
         "INSERT INTO tickets (project_key, number, title, body, type, status, priority, assignee, labels, parent_id, due, source,"
         " created, updated, closed, start, estimate, area_id, iteration_id)"
         " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
-        (project["key"], number, title, body, type, status, priority, _require_text("assignee", assignee).strip(),
+        (project["key"], number, title, body, type, status, priority, assignee,
          json.dumps(_clean_labels(labels), ensure_ascii=False), parent_id, due, source, now, now, closed,
          start, estimate, area_id, iteration_id),
     )
@@ -690,7 +694,8 @@ def update_ticket(connection: sqlite3.Connection, ticket_key: str, changes: dict
         elif field == "body":
             value = _require_text("body", raw_value)
         elif field == "assignee":
-            value = _require_text("assignee", raw_value).strip()
+            from . import people
+            value = people.resolve(connection, raw_value)
         elif field == "parent_key":
             value = (str(raw_value).strip().upper() or None) if raw_value else None
             assignments["parent_id"] = _resolve_parent_id(connection, value, row["id"])
@@ -901,7 +906,9 @@ def stats(connection: sqlite3.Connection, project_key: str | None = None) -> dic
     open_count = connection.execute(
         f"SELECT COUNT(*) FROM tickets {where + ' AND' if where else 'WHERE'} closed IS NULL", parameters).fetchone()[0]
     by_assignee = grouped("assignee")
-    unassigned = by_assignee.pop("", 0)
+    by_assignee.pop("", 0)
+    unassigned = connection.execute(
+        f"SELECT COUNT(*) FROM tickets {where + ' AND' if where else 'WHERE'} closed IS NULL AND assignee = ''", parameters).fetchone()[0]
     return {"open": open_count, "by_status": grouped("status"), "by_type": grouped("type"),
             "by_priority": grouped("priority"), "by_assignee": by_assignee, "unassigned": unassigned}
 

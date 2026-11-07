@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .web import App, HTTPError, abort, g, jsonify, request, send_from_directory
 
-from . import kb, manage, metrics, openapi, organise, questions, store
+from . import kb, manage, metrics, openapi, organise, people, questions, store
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 6680
@@ -53,6 +53,8 @@ API_HELP = {
         "GET|POST /api/kb/pages | GET|PATCH|DELETE /api/kb/pages/<id> | GET .../versions, .../versions/<n>, .../diff?from=&to= | POST .../restore",
         "POST /api/kb/pages/<id>/feedback, /favourite, /verify | GET /api/kb/pages/<id>/feedback",
         "GET /api/kb/tools?kind=&location=&q=  GET /api/kb/pages/<id>/openapi?refresh=1   the Tools category and a tool's OpenAPI description",
+        "GET|POST /api/people | DELETE /api/people/<name>   registered assignees; tickets can only be assigned to these",
+        "GET  /api/queue?person=NAME           open tickets assigned to a person, labelled assigned, review or question",
         "GET  /api/openapi.json                OpenAPI 3 description; interactive page at /docs",
     ],
 }
@@ -185,6 +187,22 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
         for text in pending_questions:
             created = questions.ask(connection, created["key"], actor(), text)
         return jsonify(created), 201
+
+    @app.get("/api/people")
+    def list_people():
+        return jsonify(people.list_people(connection))
+
+    @app.post("/api/people")
+    def add_person():
+        return jsonify(people.add(connection, body_json().get("name", ""))), 201
+
+    @app.delete("/api/people/<person_name>")
+    def remove_person(person_name):
+        return jsonify(people.remove(connection, person_name))
+
+    @app.get("/api/queue")
+    def person_queue():
+        return jsonify(people.queue(connection, request.args.get("person") or actor()))
 
     @app.get("/api/tickets/<ticket_key>")
     def ticket(ticket_key):

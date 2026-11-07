@@ -241,6 +241,9 @@ table.list tr:hover td, table.list tr:focus-visible td { background: var(--panel
 .question .answer { margin-bottom: 6px; }
 .question .answer-box { width: 100%; margin-bottom: 6px; }
 .question-chip { color: var(--accent); border-color: var(--accent); }
+.queue-chip { color: var(--accent); border-color: var(--accent); }
+.queue-button { margin-right: 4px; white-space: nowrap; color: var(--accent); border-color: var(--accent); }
+.queue-button.quiet { color: var(--muted); border-color: var(--line); }
 .event { color: var(--muted); font-size: 12px; font-family: var(--font-mono); margin-bottom: 3px; }
 .rowlink { display: flex; gap: 8px; padding: 3px 0; cursor: pointer; }
 .rowlink:hover, .rowlink:focus-visible { color: var(--accent); }

@@ -16,6 +16,7 @@ const WORK_ITEMS = [
   { id: "all", label: "All work", icon: "layers" }, { id: "mine", label: "Assigned to me", icon: "user" },
   { id: "open", label: "Open work", icon: "check" }, { id: "blocked", label: "Blocked", icon: "alert" },
   { id: "questions", label: "Open questions", icon: "help" },
+  { id: "queue", label: QUEUE_LABEL, icon: "user" },
 ];
 const ICONS = {
   menu: '<line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/>',
@@ -167,6 +168,7 @@ async function loadTicketsPage() {
   for (const [name, value] of Object.entries(currentFilters())) if (value) parameters.set(name, value);
   const listed = await guarded(() => request("GET", "/api/tickets?" + parameters));
   if (listed) { state.tickets = listed.result; state.total = listed.total; }
+  if (state.nav === "queue" && !state.project) { state.tickets = queueState.tickets; state.total = queueState.count; }
   state.stats = await guarded(() => api("GET", "/api/stats" + (state.project ? `?project=${state.project}` : "")));
   state.pageData = null;
 }
@@ -177,7 +179,7 @@ let dragInProgress = false;
 
 function renderInputs() {
   return [viewKey(), Math.floor(Date.now() / RELATIVE_TIME_BUCKET_MS), state.org, state.projects, state.areas, state.boards, state.tagList, state.kbSpaces,
-    state.tickets, state.total, state.stats, state.pageData, state.dashboards, state.dashboardData, state.iterationsAll, kbTree.levels];
+    state.tickets, state.total, state.stats, queueState.tickets, state.pageData, state.dashboards, state.dashboardData, state.iterationsAll, kbTree.levels];
 }
 
 function selectionInContent() {
@@ -194,6 +196,7 @@ async function refresh({ redrawDrawer = true, poll = false } = {}) {
   const overview = await guarded(() => api("GET", "/api/overview"));
   if (overview) { state.org = overview.organisation; state.areas = overview.areas; state.boards = overview.boards; state.projects = overview.projects; }
   state.tagList = (await guarded(() => api("GET", "/api/tags"))) || state.tagList;
+  Object.assign(queueState, queueFromResponse(await guarded(() => api("GET", "/api/queue?person=" + encodeURIComponent(queuePerson(actorName()))))));
   state.kbSpaces = (await guarded(() => api("GET", "/api/kb/spaces"))) || state.kbSpaces;
   if (editorMounted) { renderNav(); return; }
   const loaders = { tickets: loadTicketsPage, area: loadArea, board: loadBoard, dashboards: loadDashboards, manage: loadManage, kb: loadKb };
@@ -358,7 +361,7 @@ function navSections() {
     return folded ? header : [...header, ...group.projects.flatMap((root) => blocks.get(root.id).map((render) => render(group.tag ? 1 : 0)))];
   });
   return [
-    { name: "Work", items: WORK_ITEMS.filter((i) => matches(i.label)).map((i) => navItemHtml({ id: i.id, label: i.label, iconName: i.icon, kind: "work", active: onTickets && !state.project && state.nav === i.id && ["board", "list"].includes(state.view) })) },
+    { name: "Work", items: WORK_ITEMS.filter((i) => matches(i.label)).map((i) => navItemHtml({ id: i.id, label: i.label, iconName: i.icon, count: i.id === "queue" ? queueState.count : undefined, kind: "work", active: onTickets && !state.project && state.nav === i.id && ["board", "list"].includes(state.view) })) },
     { name: state.org.name || "Organisation", key: "Organisation", total: state.areas.length, items: [...areaItems, ...(matches("create area") ? [navItemHtml({ id: "create-area", label: "Create area", iconName: "plus", kind: "create-area" })] : [])] },
     { name: "Projects", total: state.projects.filter((p) => p.status !== "archived").length, items: [
       ...tagGroups(state.projects.filter((p) => p.status !== "archived" && matches(p.key + " " + p.name + " " + (p.tags || []).join(" ")))).flatMap((group) => [
@@ -510,7 +513,7 @@ function cardHtml(ticket) {
     <div class="title">${escapeHtml(ticket.title)}</div>
     <div class="meta">${icon("type", ticket.type)}<span class="key">${ticket.key}</span>
       <span class="chip tint" style="--tint:${priorityColor(ticket.priority)}" title="Priority ${ticket.priority}">${PRIORITY_MARKS[ticket.priority]} ${ticket.priority}</span>
-      <span class="chip tint" style="--tint:${typeColor(ticket.type)}">${escapeHtml(ticket.type)}</span>${labels}${estimate}${questionBadgeHtml(ticket.open_questions)}${ticket.pinned ? `<span class="chip" title="Pinned to this board">pinned</span>` : ""}
+      <span class="chip tint" style="--tint:${typeColor(ticket.type)}">${escapeHtml(ticket.type)}</span>${labels}${estimate}${questionBadgeHtml(ticket.open_questions)}${queueReasonsHtml(ticket.reasons, escapeHtml)}${ticket.pinned ? `<span class="chip" title="Pinned to this board">pinned</span>` : ""}
       ${ticket.assignee ? `<span class="avatar" style="--tint:${nameColor(ticket.assignee)}" title="${escapeHtml(ticket.assignee)}">${initials(ticket.assignee)}</span>` : ""}</div></div>`;
 }
 
@@ -563,7 +566,7 @@ function renderBoard(tickets = state.tickets, allStatuses = state.meta.statuses)
 function renderList(tickets = state.tickets) {
   if (!tickets.length) { byId("main").innerHTML = `<div class="empty"><p>No tickets match. Press c to create one.</p></div>`; return; }
   byId("main").innerHTML = `<table class="list"><thead><tr>${listColumns().map(columnHeaderHtml).join("")}</tr></thead><tbody>
-    ${orderedTickets(tickets).map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)} ${questionBadgeHtml(t.open_questions)}</td>
+    ${orderedTickets(tickets).map((t) => `<tr data-key="${t.key}" tabindex="0" role="button"><td class="key">${t.key}</td><td>${escapeHtml(t.title)} ${questionBadgeHtml(t.open_questions)}${queueReasonsHtml(t.reasons, escapeHtml)}</td>
       <td><span class="pill" style="--pill-color:${statusColor(t.status)}">${STATUS_LABELS[t.status]}</span></td>
       <td><span class="pill" style="--pill-color:${priorityColor(t.priority)}">${icon("priority", t.priority)} ${PRIORITY_MARKS[t.priority]} ${t.priority}</span></td>
       <td>${icon("type", t.type)} ${t.type}</td><td>${escapeHtml(t.assignee)}</td>${state.page === "tickets" ? `<td>${t.labels.slice(0, 3).map((l) => `<span class="chip tint" style="--tint:${tagColor(l)}">${escapeHtml(l)}</span>`).join(" ")}</td>` : ""}<td>${t.estimate === null || t.estimate === undefined ? "" : formatNumber(t.estimate)}</td>
@@ -648,6 +651,7 @@ function render() {
   byId("searchBox").placeholder = searchLabel;
   byId("searchBox").setAttribute("aria-label", searchLabel);
   updateProfileButton();
+  updateQueueButton(byId("queueButton"), queueState.count);
   const noProjects = !state.projects.length;
   const needsProject = state.page === "tickets" && noProjects;
   if (needsProject) {
@@ -926,6 +930,7 @@ function setupControls() {
   byId("searchBox").addEventListener("input", () => { clearTimeout(state.searchTimer); state.searchTimer = setTimeout(() => { if (state.page === "kb") { kbSearchFromBox(byId("searchBox").value.trim()); return; } if (state.page !== "tickets") state.page = "tickets"; if (!["board", "list"].includes(state.view)) state.view = "list"; refresh(); }, SEARCH_DEBOUNCE_MS); });
   byId("navFilter").addEventListener("input", (event) => { state.navFilter = event.target.value.trim(); renderNav(); });
   byId("newButton").addEventListener("click", () => openNewDialog());
+  byId("queueButton").addEventListener("click", () => go({ page: "tickets", project: "", nav: "queue", view: "list" }));
   byId("refreshButton").addEventListener("click", () => refresh());
   byId("helpButton").addEventListener("click", () => byId("helpDialog").showModal());
   byId("navToggle").addEventListener("click", toggleNav);

@@ -7,7 +7,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ledger import manage, organise, server, store
+from ledger import manage, organise, people, server, store
 
 OLD_SCHEMA = """
 CREATE TABLE projects (key TEXT PRIMARY KEY, name TEXT NOT NULL, description TEXT NOT NULL DEFAULT '', created REAL NOT NULL);
@@ -184,6 +184,8 @@ class BoardTests(unittest.TestCase):
         self.tools = organise.create_area(self.connection, "Tools", parent=self.platform["id"])
         self.web = organise.create_area(self.connection, "Web")
         self.sprint = organise.create_iteration(self.connection, "APP", "Sprint 1", "2026-11-09", "2026-11-20")
+        for name in ("ann", "bob"):
+            people.add(self.connection, name)
 
     def add(self, title, **fields):
         return store.create_ticket(self.connection, fields.pop("project", "APP"), title, **fields)

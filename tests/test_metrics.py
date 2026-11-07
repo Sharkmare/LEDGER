@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ledger import metrics, organise, server, store
+from ledger import metrics, organise, people, server, store
 
 DAY = 86400
 NOW = datetime.datetime(2026, 11, 5, 12, 0).timestamp()
@@ -20,6 +20,8 @@ def workspace():
     connection = store.connect(":memory:")
     store.create_project(connection, "APP", "App")
     store.create_project(connection, "WEB", "Web")
+    for name in ("ann", "bob", *(f"person{number}" for number in range(5))):
+        people.add(connection, name)
     return connection
 
 
@@ -308,6 +310,7 @@ class MetricsApiTests(unittest.TestCase):
         self.addCleanup(self.directory.cleanup)
         self.client = server.create_app(":memory:", font_dir=self.directory.name).test_client()
         self.client.post("/api/projects", json={"key": "APP", "name": "App"})
+        self.client.post("/api/people", json={"name": "ann"})
         self.client.post("/api/tickets", json={"project": "APP", "title": "t", "labels": "a", "assignee": "ann"})
 
     def test_a_fresh_server_has_the_default_dashboards(self):

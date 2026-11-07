@@ -35,6 +35,14 @@ Tickets             any type, with a parent and sub-tickets to any depth
   can be reopened or removed. Asking, answering, reopening and removing are all written to the history. Tickets with an unanswered question show a
   `? 2` badge on cards and in the list, and the Open questions item under Work lists only those tickets. Questions are separate from comments, so
   an answer is never lost in a thread.
+- **People and the queue.** Assignee names are stored lowercase, so `Ann` and `ann` are one person, and a ticket can only be assigned
+  to a registered name. A new database has nobody registered; add people with `person-add NAME` or `POST /api/people`. Assigning an unknown name is
+  refused and the message lists the nearest registered names and the command that registers it. A person is removed with `person-rm` or
+  `DELETE /api/people/<name>`, which is refused while they have open tickets. The queue is the open tickets assigned to a person. Each row carries
+  `reasons`: `assigned` always, plus `review` when the ticket is in `in_review` and `question` when it has an unanswered question; the last two label
+  tickets already in the queue and never add others. A name that is not registered has an empty queue. `GET /api/queue?person=NAME` and
+  `queue [--person NAME]` return it (the person defaults to the caller); the web interface shows it for the name in the profile menu as My queue in
+  the navigator and as a count button in the top bar. The `unassigned` figure in stats counts open tickets only.
 - **Hidden board columns** are a setting per person for every status, on every board: open the profile menu and tick the statuses to hide, for example Done
   and Cancelled. The columns are left off the ticket board, area boards and board pages, and a `Hiding Done, Cancelled` chip in the filter bar says so and clears
   them with one click. The tickets stay in list views and counts. The choice is saved in this browser.
@@ -98,6 +106,10 @@ python ledger_cli.py question ask APP-1 "Which currency first?"
 python ledger_cli.py question list --project APP
 python ledger_cli.py question answer 3 "Euro"
 python ledger_cli.py list --project APP --questions
+python ledger_cli.py people
+python ledger_cli.py person-add ann
+python ledger_cli.py queue
+python ledger_cli.py queue --person ann
 python ledger_cli.py list --project APP --open --exclude-type chore,spike
 python ledger_cli.py tree APP-1
 
@@ -140,6 +152,7 @@ The interface uses the system font stack. To use other fonts, put a `fonts.css` 
 | `ledger/store.py` | Schema, validation and ticket logic |
 | `ledger/organise.py` | Organisation, areas, boards, iterations, plan and roadmap |
 | `ledger/manage.py` | Tags and templates |
+| `ledger/people.py` | Registered assignees and the per-person queue |
 | `ledger/metrics.py` | Metrics, widgets and dashboards |
 | `ledger/kb.py` | Spaces, pages, versions, search, tools and their OpenAPI descriptions |
 | `ledger/web.py` | The HTTP layer: router, request and response, threaded server, test client |

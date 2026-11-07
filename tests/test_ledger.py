@@ -13,12 +13,13 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
 import ledger_cli
-from ledger import server, store
+from ledger import people, server, store
 
 
 def fresh_connection():
     connection = store.connect(":memory:")
     store.create_project(connection, "APP", "App work")
+    people.add(connection, "ann")
     return connection
 
 
@@ -369,6 +370,7 @@ class CliTests(LiveServerCase):
 
     def test_full_flow(self):
         self.cli("new-project", "CLI", "CLI test")
+        self.cli("person-add", "cli-test")
         created = json.loads(self.cli("--json", "add", "CLI", "made from the command line", "--type", "bug", "--priority", "high"))
         self.assertEqual(created["key"], "CLI-1")
         self.cli("move", "CLI-1", "in_progress")

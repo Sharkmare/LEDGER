@@ -15,7 +15,7 @@ REQUEST_TIMEOUT_SECONDS = 15
 LIST_FILTERS = ("project", "status", "assignee", "type", "priority", "label", "source", "area", "iteration")
 EDIT_FIELDS = ("title", "body", "type", "priority", "assignee", "labels", "due", "status", "start", "estimate", "area", "iteration")
 PLANNING_COMMANDS = ("overview", "tree", "plan", "roadmap", "project-set", "question", "area", "board", "iteration", "tag", "template", "dashboard", "metric",
-                     "kb-space", "kb-page", "kb-tool", "kb-search", "find")
+                     "kb-space", "kb-page", "kb-tool", "kb-search", "find", "people", "person-add", "person-rm", "queue")
 
 
 def default_actor() -> str:
@@ -186,6 +186,11 @@ def add_ticket_commands(commands) -> None:
 
 def add_planning_commands(commands) -> None:
     commands.add_parser("overview", help="organisation, areas, boards and projects")
+    commands.add_parser("people", help="registered assignees with open ticket counts")
+    commands.add_parser("person-add", help="register an assignee").add_argument("name")
+    commands.add_parser("person-rm", help="remove an assignee with no open tickets").add_argument("name")
+    queue = commands.add_parser("queue", help="open tickets that need a person (you by default)")
+    queue.add_argument("--person", default="")
     tree = commands.add_parser("tree", help="a ticket with all its sub-tickets")
     tree.add_argument("key")
     plan = commands.add_parser("plan", help="backlog and iterations of a project")
@@ -768,6 +773,14 @@ def run_planning_command(arguments: argparse.Namespace):
         return run_kb_command(arguments, base, actor)
     if command == "overview":
         return call(base, "GET", "/api/overview", actor)
+    if command == "people":
+        return call(base, "GET", "/api/people", actor)
+    if command == "person-add":
+        return call(base, "POST", "/api/people", actor, {"name": arguments.name})
+    if command == "person-rm":
+        return call(base, "DELETE", f"/api/people/{quoted(arguments.name)}", actor)
+    if command == "queue":
+        return call(base, "GET", f"/api/queue?person={quoted(arguments.person or actor)}", actor)
     if command == "tree":
         return call(base, "GET", f"/api/tickets/{arguments.key}/tree", actor)
     if command == "plan":
@@ -838,6 +851,15 @@ def render_planning(arguments: argparse.Namespace, result) -> None:
         print_tree(result)
     elif command == "overview":
         render_overview(result)
+    elif command == "people":
+        for person in result:
+            print(f"{person['name']:<20} {person['open_tickets']:>4} open")
+    elif command in ("person-add", "person-rm"):
+        print(f"{result['name']} {'registered' if command == 'person-add' else 'removed'}")
+    elif command == "queue":
+        for ticket in result["tickets"]:
+            print(f"{ticket_line(ticket)}  [{', '.join(ticket['reasons'])}]")
+        print(f"{result['count']} tickets need {result['person']}")
     elif command == "plan":
         render_plan(result)
     elif command == "roadmap":

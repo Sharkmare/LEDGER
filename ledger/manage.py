@@ -195,7 +195,8 @@ def _template_values(connection: sqlite3.Connection, fields: dict, base: dict) -
     values["body"] = _require_text("body", values["body"])
     values["labels"] = store._clean_labels(values["labels"])
     values["estimate"] = store._clean_estimate(values["estimate"])
-    values["assignee"] = _require_text("assignee", values["assignee"]).strip()
+    from . import people
+    values["assignee"] = people.resolve(connection, values["assignee"])
     return values
 
 

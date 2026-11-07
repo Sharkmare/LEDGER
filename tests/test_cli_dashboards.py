@@ -23,6 +23,8 @@ class DashboardCliTests(LiveServerCase):
 
     def test_metrics_print_numbers(self):
         self.cli("new-project", "MET", "Metrics")
+        self.cli("person-add", "ann")
+        self.cli("person-add", "bob")
         self.cli("add", "MET", "a", "--assignee", "ann", "--labels", "x", "--due", "2020-01-01", "--estimate", "3")
         self.cli("add", "MET", "b", "--assignee", "bob")
         self.assertIn("2  (", self.cli("metric", "count", "--project", "MET", "--measure", "created"))
