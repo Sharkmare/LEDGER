@@ -2,6 +2,19 @@
 
 Generated from commit subjects by `tools/changelog.py` when a release is cut. Do not edit it by hand: a subject's first word picks its heading (see CONTRIBUTING.md).
 
+## 1.3.0 (2026-11-07)
+
+### Added
+
+- Add hidden ticket types per person and a distinct Cancelled color (`e7edd9b`)
+- Add hidden board columns per person for every status (`28da581`)
+- Add an assignee registry with lowercase names and a personal queue (`0b8f242`)
+- Add per person hidden types, hidden columns and sort on the server (`f51054e`)
+- Add bulk ticket changes in the API, CLI and list view (`a2dee44`)
+- Show similar open tickets when creating one, in the CLI and UI (`54b11c2`)
+- Add closing rules and advisory work in progress limits (`d5402f5`)
+- Add a dependency view with blocker chains and an epic critical path (`d6e72f3`)
+
 ## 1.2.0 (2026-11-06)
 
 ### Added
