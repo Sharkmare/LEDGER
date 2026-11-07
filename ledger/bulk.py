@@ -59,8 +59,11 @@ def update(connection: sqlite3.Connection, keys, changes, actor: str, comment: s
     for key in ordered:
         try:
             before = store.get_ticket(connection, key)
-            after = store.update_ticket(connection, key, changes_for(before, changes), actor=actor) if changes else before
-            if comment:
+            applied = changes_for(before, changes)
+            if comment and applied.get("status") == "done":
+                applied["comment"] = comment
+            after = store.update_ticket(connection, key, applied, actor=actor) if changes else before
+            if comment and len(after["comments"]) == len(before["comments"]):
                 store.add_comment(connection, key, actor, comment)
         except store.LedgerError as error:
             failed.append({"key": key, "error": str(error)})

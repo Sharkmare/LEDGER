@@ -103,7 +103,7 @@ class StoreTests(unittest.TestCase):
     def test_closing_sets_and_reopening_clears_closed_time(self):
         ticket = store.create_ticket(self.connection, "APP", "t")
         self.assertIsNone(ticket["closed"])
-        done = store.update_ticket(self.connection, ticket["key"], {"status": "done"})
+        done = store.update_ticket(self.connection, ticket["key"], {"status": "done", "comment": "finished"})
         self.assertIsNotNone(done["closed"])
         reopened = store.update_ticket(self.connection, ticket["key"], {"status": "todo"})
         self.assertIsNone(reopened["closed"])

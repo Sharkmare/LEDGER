@@ -116,6 +116,7 @@ def schemas() -> dict:
                 "title": {"type": "string"}, "body": {"type": "string"},
                 "type": {"type": "string", "enum": list(store.TICKET_TYPES)},
                 "status": {"type": "string", "enum": list(store.STATUSES)},
+                "comment": {"type": "string", "description": "Added as a comment in the same call; moving a ticket to done needs a comment, this one or an earlier one"},
                 "priority": {"type": "string", "enum": list(store.PRIORITIES)},
                 "assignee": {"type": "string"}, "labels": {"type": "array", "items": {"type": "string"}},
                 "parent_key": {"type": "string", "description": "Empty string clears the parent"}, "due": {"type": "string"},
@@ -600,6 +601,26 @@ def kb_schemas() -> dict:
     }
 
 
+def wip_paths() -> dict:
+    status = {"name": "status", "in": "path", "required": True, "description": "in_progress, in_review or blocked",
+              "schema": {"type": "string", "enum": ["in_progress", "in_review", "blocked"]}}
+    return {
+        "/api/wip": {"get": operation("Reports", "Work in progress limits and the current count per status; limits are advisory", "getWip",
+                                      {"200": json_response("Limits, counts and the statuses over their limit", ref("Wip"))})},
+        "/api/wip/{status}": {"put": operation("Reports", "Set the limit for a status; 0 or null clears it", "setWipLimit",
+                                               {"200": json_response("Limits, counts and the statuses over their limit", ref("Wip")), "400": ERRORS["400"]},
+                                               [status], json_body({"type": "object", "properties": {"limit": {"type": "integer", "nullable": True}}}))},
+    }
+
+
+def wip_schemas() -> dict:
+    return {"Wip": {"type": "object", "properties": {
+        "limited_statuses": {"type": "array", "items": {"type": "string"}},
+        "limits": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "counts": {"type": "object", "additionalProperties": {"type": "integer"}},
+        "over": {"type": "array", "items": {"type": "string"}}}}}
+
+
 def build_spec() -> dict:
     return {
         "openapi": "3.0.3",
@@ -612,6 +633,6 @@ def build_spec() -> dict:
         "tags": [{"name": "Service"}, {"name": "Organisation"}, {"name": "Projects"}, {"name": "Areas"}, {"name": "Boards"},
                  {"name": "Planning"}, {"name": "Tickets"}, {"name": "Questions"}, {"name": "Tags"}, {"name": "Templates"}, {"name": "Reports"},
                  {"name": "Dashboards"}, {"name": "Metrics"}, {"name": "Knowledge"}, {"name": "Tools"}, {"name": "People"}, {"name": "Settings"}],
-        "paths": {**paths(), **organisation_paths(), **dashboard_paths(), **kb_paths(), **people_spec.paths(), **usersettings.openapi_paths()},
-        "components": {"schemas": {**schemas(), **organisation_schemas(), **dashboard_schemas(), **kb_schemas(), **people_spec.schemas(), **usersettings.openapi_schemas()}},
+        "paths": {**paths(), **organisation_paths(), **dashboard_paths(), **kb_paths(), **people_spec.paths(), **usersettings.openapi_paths(), **wip_paths()},
+        "components": {"schemas": {**schemas(), **organisation_schemas(), **dashboard_schemas(), **kb_schemas(), **people_spec.schemas(), **usersettings.openapi_schemas(), **wip_schemas()}},
     }

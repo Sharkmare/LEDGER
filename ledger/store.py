@@ -8,6 +8,8 @@ import time
 from pathlib import Path
 from typing import Any, Iterable
 
+from . import closing
+
 TICKET_TYPES = ("task", "bug", "feature", "epic", "story", "spike", "chore")
 STATUSES = ("backlog", "todo", "in_progress", "in_review", "blocked", "done", "cancelled")
 CLOSED_STATUSES = ("done", "cancelled")
@@ -672,6 +674,12 @@ def _links_of(connection: sqlite3.Connection, ticket_id: int) -> list[dict]:
 
 def update_ticket(connection: sqlite3.Connection, ticket_key: str, changes: dict, actor: str = "system") -> dict:
     row = _find_row(connection, ticket_key)
+    changes = dict(changes)
+    closing_comment = changes.pop("comment", "")
+    if closing_comment is None:
+        closing_comment = ""
+    if not isinstance(closing_comment, str):
+        raise LedgerError("comment must be text")
     unknown = sorted(set(changes) - set(EDITABLE_FIELDS))
     if unknown:
         raise LedgerError(f"cannot edit {', '.join(unknown)}; editable fields are {', '.join(EDITABLE_FIELDS)}")
@@ -731,9 +739,16 @@ def update_ticket(connection: sqlite3.Connection, ticket_key: str, changes: dict
         new_text = json.dumps(value, ensure_ascii=False) if field == "labels" else str(value or "")
         event_rows.append((field, old_text, new_text))
     _require_order("start", assignments.get("start", row["start"]), "due", assignments.get("due", row["due"]))
+    if assignments.get("status") == "done":
+        problem = closing.closing_problem(connection, row["id"], closing_comment)
+        if problem:
+            raise LedgerError(problem)
     if not event_rows:
         return get_ticket(connection, ticket_key)
     now = time.time()
+    if closing_comment.strip() and assignments.get("status") == "done":
+        connection.execute("INSERT INTO comments (ticket_id, author, body, created) VALUES (?, ?, ?, ?)",
+                           (row["id"], actor.strip() or "anonymous", closing_comment, now))
     if "status" in assignments:
         assignments["closed"] = now if assignments["status"] in CLOSED_STATUSES else None
     assignments["updated"] = now

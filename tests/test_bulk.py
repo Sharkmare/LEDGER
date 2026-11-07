@@ -25,6 +25,16 @@ class BulkUpdateTests(unittest.TestCase):
         bulk.update(connection, keys[:1], {"status": "in_review"}, "ann")
         self.assertIn("ann", [e["actor"] for e in store.ticket_events(connection, keys[0])])
 
+    def test_closing_with_a_comment_adds_it_once_and_without_one_is_refused(self):
+        connection, keys = fresh()
+        refused = bulk.update(connection, keys[:2], {"status": "done"}, "t")
+        self.assertEqual((refused["updated"], [f["key"] for f in refused["failed"]]), ([], keys[:2]))
+        closed = bulk.update(connection, keys[:2], {"status": "done"}, "t", "shipped in 1.3")
+        self.assertEqual((closed["updated"], closed["failed"]), (keys[:2], []))
+        for key in keys[:2]:
+            shown = store.get_ticket(connection, key)
+            self.assertEqual((shown["status"], [c["body"] for c in shown["comments"]]), ("done", ["shipped in 1.3"]))
+
     def test_a_failing_ticket_does_not_stop_the_rest(self):
         connection, keys = fresh()
         result = bulk.update(connection, [keys[0], "BLK-99", keys[1]], {"status": "in_review"}, "t")

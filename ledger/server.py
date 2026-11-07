@@ -8,7 +8,7 @@ from pathlib import Path
 
 from .web import App, HTTPError, abort, g, jsonify, request, send_from_directory
 
-from . import bulk, kb, manage, metrics, openapi, organise, people, questions, similar, store, usersettings
+from . import bulk, kb, manage, metrics, openapi, organise, people, questions, similar, store, usersettings, wip
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 6680
@@ -30,7 +30,7 @@ API_HELP = {
         "POST /api/tickets {project,title,body,type,status,priority,assignee,labels,parent,due,source}",
         "POST /api/tickets/bulk {keys,changes,comment}   same changes on up to 200 tickets; changes may add add_labels/remove_labels; not atomic",
         "GET  /api/tickets/similar?project=&title=&limit=   open tickets with a close title, best first",
-        "GET  /api/tickets/<KEY-N> | PATCH {field: value} | DELETE",
+        "GET  /api/tickets/<KEY-N> | PATCH {field: value, comment} | DELETE   status done needs a comment on the ticket or in the PATCH",
         "POST /api/tickets/<KEY-N>/comments {body}",
         "POST /api/tickets/<KEY-N>/questions {text}",
         "GET  /api/questions?state=open|answered|all&project=&ticket=",
@@ -58,6 +58,7 @@ API_HELP = {
         "GET|POST /api/people | DELETE /api/people/<name>   registered assignees; tickets can only be assigned to these",
         "GET  /api/queue?person=NAME           open tickets assigned to a person, labelled assigned, review or question",
         "GET /api/settings  PUT|DELETE /api/settings/<key>   per-person view settings (hidden_types, hidden_statuses, sort), keyed by X-Ledger-Actor",
+        "GET  /api/wip                         advisory work in progress limits and counts | PUT /api/wip/<status> {limit}  (in_progress, in_review, blocked; 0 clears)",
         "GET  /api/openapi.json                OpenAPI 3 description; interactive page at /docs",
     ],
 }
@@ -449,6 +450,14 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
     @app.get("/api/tickets/<ticket_key>/tree")
     def tree(ticket_key):
         return jsonify(store.ticket_tree(connection, ticket_key))
+
+    @app.get("/api/wip")
+    def wip_overview():
+        return jsonify(wip.overview(connection))
+
+    @app.put("/api/wip/<status>")
+    def wip_set(status):
+        return jsonify(wip.set_limit(connection, status, body_json().get("limit")))
 
     @app.post("/api/metrics")
     def metric():

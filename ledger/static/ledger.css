@@ -181,6 +181,7 @@ main { flex: 1; overflow: auto; padding: 4px 20px 16px; min-height: 0; }
 }
 .column h3 .heading { display: inline-flex; align-items: center; }
 .column h3 .count { color: var(--muted); font-family: var(--font-mono); }
+.column h3 .count.wip-over { color: var(--danger, #c0392b); background: color-mix(in srgb, var(--danger, #c0392b) 16%, transparent); border-radius: 8px; padding: 0 6px; font-weight: 700; }
 .cards { padding: 8px; display: flex; flex-direction: column; gap: 8px; overflow-y: auto; flex: 1; min-height: 40px; }
 .column-empty { color: var(--muted); text-align: center; padding: 14px 0; font-size: 12px; }
 

@@ -29,7 +29,8 @@ Organisation
 Tickets             any type, with a parent and sub-tickets to any depth
 ```
 
-- **Tickets** have a title, description, type, status, priority, assignee, tags, parent, area, iteration, estimate, start and due date, links, comments, open questions and a history that records who changed what. Types: task, bug, feature, epic, story, spike, chore. Statuses: backlog, todo, in_progress, in_review, blocked, done, cancelled. An epic shows progress over everything under it.
+- **Tickets** have a title, description, type, status, priority, assignee, tags, parent, area, iteration, estimate, start and due date, links, comments, open questions and a history that records who changed what. Types: task, bug, feature, epic, story, spike, chore. Statuses: backlog, todo, in_progress, in_review, blocked, done, cancelled. An epic shows progress over everything under it. A ticket moves to done only with a comment on it (the counts or the result), either one it already has or `comment` in the same PATCH; A ticket also cannot move to done while an open ticket (not done or cancelled) has a `blocks` link to it; the refusal names the blockers. Cancelling and creating a ticket directly in done are not affected.
+- **Work in progress limits** are advisory. `GET /api/wip` returns the limits and the current count per status, `PUT /api/wip/<status>` with `{"limit": 3}` sets one (0 or null clears it) and only in_progress, in_review and blocked may have a limit. Nothing is ever refused: a board column over its limit shows `count / limit` with a red tint.
 - **Open questions** are questions a ticket cannot move without. Ask one on the ticket (or when you create it); anyone can answer it in the
   drawer, where each open question has its own answer box (Ctrl+Enter posts). An answered question keeps its answer, who gave it and when, and
   can be reopened or removed. Asking, answering, reopening and removing are all written to the history. Tickets with an unanswered question show a
@@ -108,7 +109,9 @@ python ledger_cli.py list -q login --area Platform
 python ledger_cli.py mine
 python ledger_cli.py show APP-1
 python ledger_cli.py move APP-1 in_progress
-python ledger_cli.py done APP-1 --comment "Fixed in the next release"
+python ledger_cli.py wip                      # work in progress limits and counts
+python ledger_cli.py wip-set in_progress 3   # advisory limit; 0 clears it
+python ledger_cli.py done APP-1 --comment "Fixed in the next release"   # refused without a comment
 python ledger_cli.py bulk APP-1 APP-2 APP-3 --status done --add-label shipped --comment "Released"
 python ledger_cli.py --json list --project APP --open --label stale | python ledger_cli.py bulk --keys-from - --status cancelled
 python ledger_cli.py add APP "Pick a payment provider" --question "Which provider?" --question "Refunds in v1?"

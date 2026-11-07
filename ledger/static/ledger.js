@@ -48,7 +48,7 @@ Object.assign(ICONS, {
 const state = {
   meta: null, org: { name: "" }, projects: [], areas: [], boards: [], tagList: [], tickets: [], total: 0, stats: null,
   page: "tickets", project: "", nav: "all", view: "board", areaId: null, boardId: null, dashboards: [], dashboardId: null, dashboardData: null,
-  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], hiddenTypes: [], hiddenStatuses: [], sort: { field: "", direction: "asc" }, filters: emptyFilters(),
+  manageTab: "projects", manageProject: "", kbSpaces: [], kb: { view: "home", spaceId: null, pageId: null, editing: false, history: false, toolKind: "", toolLocation: "", toolQuery: "" }, pageData: null, iterationsAll: [], icons: {}, openKey: null, searchTimer: null, navFilter: "", collapsedSections: [], collapsedAreas: [], hiddenTypes: [], hiddenStatuses: [], wip: null, sort: { field: "", direction: "asc" }, filters: emptyFilters(),
 };
 
 const byId = (id) => document.getElementById(id);
@@ -197,6 +197,7 @@ async function refresh({ redrawDrawer = true, poll = false } = {}) {
   if (overview) { state.org = overview.organisation; state.areas = overview.areas; state.boards = overview.boards; state.projects = overview.projects; }
   state.tagList = (await guarded(() => api("GET", "/api/tags"))) || state.tagList;
   Object.assign(queueState, queueFromResponse(await guarded(() => api("GET", "/api/queue?person=" + encodeURIComponent(queuePerson(actorName()))))));
+  state.wip = (await guarded(() => api("GET", "/api/wip"))) || state.wip;
   state.kbSpaces = (await guarded(() => api("GET", "/api/kb/spaces"))) || state.kbSpaces;
   if (editorMounted) { renderNav(); return; }
   const loaders = { tickets: loadTicketsPage, area: loadArea, board: loadBoard, dashboards: loadDashboards, manage: loadManage, kb: loadKb };
@@ -558,7 +559,7 @@ function renderBoard(tickets = state.tickets, allStatuses = state.meta.statuses)
   orderedTickets(tickets).forEach((t) => { if (columns[t.status]) columns[t.status].push(t); });
   byId("main").innerHTML = `<div class="board">${statuses.map((status) => `
     <section class="column" data-status="${status}" style="--status-color:${statusColor(status)}" aria-label="${STATUS_LABELS[status]}">
-      <h3><span class="heading"><span class="dot" style="--tint:${statusColor(status)}"></span>${STATUS_LABELS[status]}</span><span class="count">${columns[status].length}</span></h3>
+      <h3><span class="heading"><span class="dot" style="--tint:${statusColor(status)}"></span>${STATUS_LABELS[status]}</span>${wipCountHtml(columns[status].length, status, state.wip)}</h3>
       <div class="cards">${columns[status].map(cardHtml).join("") || `<div class="column-empty">Nothing here</div>`}</div></section>`).join("")}</div>`;
   attachBoardEvents();
 }

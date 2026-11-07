@@ -185,6 +185,10 @@ def add_ticket_commands(commands) -> None:
     remove.add_argument("key")
     board = commands.add_parser("columns", help="tickets by status column")
     board.add_argument("--project")
+    commands.add_parser("wip", help="work in progress limits and counts")
+    wip_set = commands.add_parser("wip-set", help="set the advisory limit for in_progress, in_review or blocked; 0 clears it")
+    wip_set.add_argument("status")
+    wip_set.add_argument("limit", type=int)
     stats = commands.add_parser("stats", help="counts")
     stats.add_argument("--project")
 
@@ -469,10 +473,7 @@ def run_ticket_command(arguments: argparse.Namespace):
     if command == "move":
         return call(base, "PATCH", f"/api/tickets/{arguments.key}", actor, {"status": arguments.status})
     if command == "done":
-        ticket = call(base, "PATCH", f"/api/tickets/{arguments.key}", actor, {"status": "done"})
-        if arguments.comment:
-            ticket = call(base, "POST", f"/api/tickets/{arguments.key}/comments", actor, {"body": arguments.comment})
-        return ticket
+        return call(base, "PATCH", f"/api/tickets/{arguments.key}", actor, drop_empty({"status": "done", "comment": arguments.comment}))
     if command == "assign":
         return call(base, "PATCH", f"/api/tickets/{arguments.key}", actor, {"assignee": arguments.assignee})
     if command == "edit":
@@ -488,6 +489,10 @@ def run_ticket_command(arguments: argparse.Namespace):
         return call(base, "DELETE", f"/api/tickets/{arguments.key}", actor)
     if command == "columns":
         return call(base, "GET", "/api/board" + (f"?project={arguments.project}" if arguments.project else ""), actor)
+    if command == "wip":
+        return call(base, "GET", "/api/wip", actor)
+    if command == "wip-set":
+        return call(base, "PUT", f"/api/wip/{arguments.status}", actor, {"limit": arguments.limit})
     if command == "stats":
         return call(base, "GET", "/api/stats" + (f"?project={arguments.project}" if arguments.project else ""), actor)
     raise SystemExit(f"ledger: unknown command {command}")
@@ -950,6 +955,13 @@ def render_planning(arguments: argparse.Namespace, result) -> None:
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def print_wip(result: dict) -> None:
+    for status in result["limited_statuses"]:
+        limit = result["limits"].get(status)
+        flag = "  OVER" if status in result["over"] else ""
+        print(f"{status:<12} {result['counts'][status]} / {limit if limit else 'no limit'}{flag}")
+
+
 def render_ticket_command(command: str, result) -> None:
     if command in ("list", "mine"):
         for ticket in result:
@@ -974,6 +986,8 @@ def render_ticket_command(command: str, result) -> None:
         bulk_cli.render(result)
     elif command in ("add", "move", "done", "assign", "edit", "comment", "link"):
         print_ticket(result)
+    elif command in ("wip", "wip-set"):
+        print_wip(result)
     elif command == "stats":
         print(f"open {result['open']}, unassigned {result['unassigned']}")
         for group in ("by_status", "by_type", "by_priority", "by_assignee"):
