@@ -713,12 +713,13 @@ async function openTicket(key, scroll = true, skipIfUnchanged = false) {
   if (!ticket) { closeDrawer(); return; }
   const events = (await guarded(() => api("GET", `/api/tickets/${key}/events`))) || [];
   const iterations = (await guarded(() => api("GET", `/api/iterations?project=${ticket.project_key}`))) || [];
+  const dependencies = await guarded(() => api("GET", `/api/tickets/${key}/dependencies`));
   const tree = ticket.children.length ? await guarded(() => api("GET", `/api/tickets/${key}/tree`)) : null;
   state.openKey = ticket.key;
   history.replaceState(null, "", "#" + ticket.key);
   const mentions = (await guarded(() => api("GET", `/api/kb/mentions?ticket=${ticket.key}`))) || [];
   const knowledgeHtml = mentions.length ? `<h4>Knowledge</h4>${mentions.map((p) => `<div class="rowlink" tabindex="0" role="link" data-kb-page-open="${p.id}"><span class="chip">${p.page_type === "tool" ? "tool" : "page"}</span><span>${escapeHtml(p.title)}</span></div>`).join("")}` : "";
-  const drawerChanged = changeTracker.changed("drawer", [ticket, events, iterations, tree, mentions, state.areas]);
+  const drawerChanged = changeTracker.changed("drawer", [ticket, events, iterations, tree, mentions, state.areas, dependencies]);
   if (skipIfUnchanged && !drawerChanged && !byId("drawer").hidden) return;
   const progress = ticket.progress;
   const areaChoices = [{ value: "", label: "No area" }, ...state.areas.map((a) => ({ value: String(a.id), label: a.path }))];
@@ -749,6 +750,7 @@ async function openTicket(key, scroll = true, skipIfUnchanged = false) {
     <h4>Sub-tickets</h4>
     ${tree ? treeHtml(tree) : `<div class="event">none</div>`}
     <div class="actions-row"><button id="subCreate">Add sub-ticket</button></div>
+    ${dependenciesHtml(dependencies, { escapeHtml, statusColor, statusLabel: (status) => STATUS_LABELS[status] })}
     <h4>Links</h4>
     ${ticket.links.map((l) => `<div class="rowlink" tabindex="0" role="link" data-open="${l.key}"><span class="chip">${l.direction === "out" ? l.kind : "is " + l.kind + " by"}</span><span class="key">${l.key}</span><span>${escapeHtml(l.title)}</span></div>`).join("") || `<div class="event">none</div>`}
     <div class="inline"><input type="text" id="linkTarget" placeholder="APP-2" aria-label="Ticket to link">

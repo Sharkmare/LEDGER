@@ -273,3 +273,6 @@ dialog .actions { display: flex; justify-content: flex-end; gap: 10px; margin-to
   .column { flex-basis: 78vw; }
   .top-actions .icon-button:not(#themeButton) { display: none; }
 }
+.dep-row { align-items: center; }
+.dep-warn { color: var(--danger); }
+.dep-path { margin-top: 8px; }

@@ -185,6 +185,8 @@ def add_ticket_commands(commands) -> None:
     remove.add_argument("key")
     board = commands.add_parser("columns", help="tickets by status column")
     board.add_argument("--project")
+    deps = commands.add_parser("deps", help="blockers, blocked tickets and the critical path of an epic")
+    deps.add_argument("key")
     commands.add_parser("wip", help="work in progress limits and counts")
     wip_set = commands.add_parser("wip-set", help="set the advisory limit for in_progress, in_review or blocked; 0 clears it")
     wip_set.add_argument("status")
@@ -489,6 +491,8 @@ def run_ticket_command(arguments: argparse.Namespace):
         return call(base, "DELETE", f"/api/tickets/{arguments.key}", actor)
     if command == "columns":
         return call(base, "GET", "/api/board" + (f"?project={arguments.project}" if arguments.project else ""), actor)
+    if command == "deps":
+        return call(base, "GET", f"/api/tickets/{arguments.key}/dependencies", actor)
     if command == "wip":
         return call(base, "GET", "/api/wip", actor)
     if command == "wip-set":
@@ -955,6 +959,15 @@ def render_planning(arguments: argparse.Namespace, result) -> None:
         print(json.dumps(result, indent=2, ensure_ascii=False))
 
 
+def print_dependencies(result: dict) -> None:
+    print(f"{result['key']}  {result['open_blockers']} open blockers")
+    for heading, name in (("blocked by", "blocked_by"), ("blocks", "blocks")):
+        for entry in result[name]:
+            print(f"  {heading:<10} {'  ' * (entry['depth'] - 1)}{entry['key']}  [{entry['status']}]  {entry['title']}")
+    if result.get("critical_path"):
+        print("  critical path " + " -> ".join(result["critical_path"]))
+
+
 def print_wip(result: dict) -> None:
     for status in result["limited_statuses"]:
         limit = result["limits"].get(status)
@@ -986,6 +999,8 @@ def render_ticket_command(command: str, result) -> None:
         bulk_cli.render(result)
     elif command in ("add", "move", "done", "assign", "edit", "comment", "link"):
         print_ticket(result)
+    elif command == "deps":
+        print_dependencies(result)
     elif command in ("wip", "wip-set"):
         print_wip(result)
     elif command == "stats":

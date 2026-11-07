@@ -613,6 +613,20 @@ def wip_paths() -> dict:
     }
 
 
+def dependency_paths() -> dict:
+    return {"/api/tickets/{ticket_key}/dependencies": {"get": operation(
+        "Tickets", "Transitive blockers and blocked tickets over blocks links, and the critical path of a ticket with sub-tickets", "ticketDependencies",
+        {"200": json_response("The dependency view", ref("Dependencies")), "404": ERRORS["404"]}, [key_parameter()])}}
+
+
+def dependency_schemas() -> dict:
+    entry = {"type": "object", "properties": {"key": {"type": "string"}, "title": {"type": "string"}, "status": {"type": "string"}, "depth": {"type": "integer"}}}
+    return {"Dependencies": {"type": "object", "properties": {
+        "key": {"type": "string"}, "blocked_by": {"type": "array", "items": entry}, "blocks": {"type": "array", "items": entry},
+        "open_blockers": {"type": "integer", "description": "Open tickets that block this one directly"},
+        "critical_path": {"type": "array", "items": {"type": "string"}, "description": "Only for tickets with sub-tickets: the longest chain of open sub-tickets linked by blocks"}}}}
+
+
 def wip_schemas() -> dict:
     return {"Wip": {"type": "object", "properties": {
         "limited_statuses": {"type": "array", "items": {"type": "string"}},
@@ -633,6 +647,6 @@ def build_spec() -> dict:
         "tags": [{"name": "Service"}, {"name": "Organisation"}, {"name": "Projects"}, {"name": "Areas"}, {"name": "Boards"},
                  {"name": "Planning"}, {"name": "Tickets"}, {"name": "Questions"}, {"name": "Tags"}, {"name": "Templates"}, {"name": "Reports"},
                  {"name": "Dashboards"}, {"name": "Metrics"}, {"name": "Knowledge"}, {"name": "Tools"}, {"name": "People"}, {"name": "Settings"}],
-        "paths": {**paths(), **organisation_paths(), **dashboard_paths(), **kb_paths(), **people_spec.paths(), **usersettings.openapi_paths(), **wip_paths()},
-        "components": {"schemas": {**schemas(), **organisation_schemas(), **dashboard_schemas(), **kb_schemas(), **people_spec.schemas(), **usersettings.openapi_schemas(), **wip_schemas()}},
+        "paths": {**paths(), **organisation_paths(), **dashboard_paths(), **kb_paths(), **people_spec.paths(), **usersettings.openapi_paths(), **wip_paths(), **dependency_paths()},
+        "components": {"schemas": {**schemas(), **organisation_schemas(), **dashboard_schemas(), **kb_schemas(), **people_spec.schemas(), **usersettings.openapi_schemas(), **wip_schemas(), **dependency_schemas()}},
     }
