@@ -102,12 +102,6 @@ const statusColor = (status) => `var(--status-${status})`;
 const priorityColor = (priority) => `var(--priority-${priority})`;
 const typeColor = (type) => `var(--type-${type})`;
 
-function nameColor(name) {
-  let hash = 0;
-  for (const character of String(name).toLowerCase()) hash = (hash * 31 + character.codePointAt(0)) % 360;
-  return `hsl(${hash} 62% 62%)`;
-}
-
 function tagColor(name) {
   const tag = state.tagList.find((t) => t.name === String(name).toLowerCase());
   return tag && tag.color ? tag.color : nameColor(name);
@@ -135,12 +129,6 @@ async function loadIcons() {
       if (!Number.isNaN(point)) state.icons[name] = String.fromCodePoint(point);
     }
   } catch (_) { return; }
-}
-
-function statsFrom(tickets) {
-  const tally = (pick) => tickets.reduce((counts, t) => { const key = pick(t); if (key) counts[key] = (counts[key] || 0) + 1; return counts; }, {});
-  return { open: tickets.filter((t) => !state.meta.closed_statuses.includes(t.status)).length, unassigned: tickets.filter((t) => !t.assignee).length,
-    by_status: tally((t) => t.status), by_type: tally((t) => t.type), by_priority: tally((t) => t.priority), by_assignee: tally((t) => t.assignee) };
 }
 
 function currentFilters() {
@@ -217,17 +205,6 @@ function go(changes = {}) {
   return refresh();
 }
 
-function filterValues(fieldId) {
-  const plain = (values) => values.map((value) => ({ value, label: value }));
-  if (fieldId === "status") return state.meta.statuses.map((value) => ({ value, label: STATUS_LABELS[value] }));
-  if (fieldId === "priority") return plain(state.meta.priorities);
-  if (fieldId === "type") return plain(state.meta.types);
-  if (fieldId === "label") return plain(state.tagList.map((tag) => tag.name));
-  const names = Object.keys((state.stats && state.stats.by_assignee) || {}).filter(Boolean).sort((a, b) => a.localeCompare(b));
-  if (state.filters.assignee && !names.includes(state.filters.assignee)) names.push(state.filters.assignee);
-  return plain(names);
-}
-
 function setHiddenTypes(hidden) {
   state.hiddenTypes = hidden;
   saveSetting("hidden_types", hidden);
@@ -270,7 +247,7 @@ function openColumnMenu(fieldId, anchor) {
   closeColumnMenu();
   if (reopening) return;
   const field = FILTER_FIELDS.find((entry) => entry.id === fieldId);
-  const options = filterValues(fieldId);
+  const options = filterValues(fieldId, { meta: state.meta, tagList: state.tagList, stats: state.stats, assignee: state.filters.assignee, statusLabels: STATUS_LABELS });
   const menu = document.createElement("div");
   menu.id = "columnMenu";
   menu.className = "column-menu";
@@ -548,7 +525,7 @@ function renderTicketsPage() {
 
 function renderBoardPage() {
   const { board } = state.pageData;
-  if (state.view === "summary") return renderSummary(statsFrom(state.tickets));
+  if (state.view === "summary") return renderSummary(statsFrom(state.tickets, state.meta.closed_statuses));
   if (state.view === "list") return renderList(state.tickets);
   return renderBoard(state.tickets, board.statuses);
 }
