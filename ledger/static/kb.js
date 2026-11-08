@@ -16,14 +16,6 @@ const KB_TOOL_STATUS_COLORS = { active: "#5fd38d", experimental: "#ffc24c", depr
 
 const kbLive = { editor: null, draftTimer: null, previewTimer: null, findTimer: null, titles: [], viewed: null };
 
-function ago(stamp) {
-  if (!stamp) return "never";
-  const seconds = Math.max(0, Date.now() / 1000 - stamp);
-  const units = [[31536000, "year"], [2592000, "month"], [604800, "week"], [86400, "day"], [3600, "hour"], [60, "minute"]];
-  for (const [size, name] of units) if (seconds >= size) { const n = Math.floor(seconds / size); return `${n} ${name}${n === 1 ? "" : "s"} ago`; }
-  return "just now";
-}
-
 function kbRecents() {
   try { return JSON.parse(recall(KB_RECENT_STORAGE, "[]")); } catch (_) { return []; }
 }
@@ -565,7 +557,7 @@ function wireEditor(page, draft) {
   const preview = byId("kbPreview");
   let dirty = false;
   const update = () => {
-    preview.innerHTML = renderMarkdown(body.value, { ...kbContext(page), wiki: wikiMap(body.value) }).html;
+    preview.innerHTML = renderMarkdown(body.value, { ...kbContext(page), wiki: wikiMap(body.value, kbLive.titles) }).html;
     byId("kbCount").textContent = `${body.value.length} characters`;
     wireKbLinks(preview);
   };
@@ -630,16 +622,6 @@ function wireEditor(page, draft) {
   byId("kbComment").addEventListener("keydown", (event) => { if (event.key === "Enter") { event.preventDefault(); save(); } });
 }
 
-function wikiMap(text) {
-  const map = {};
-  for (const match of text.matchAll(/\[\[([^\]\n|]+)(?:\|[^\]\n]*)?\]\]/g)) {
-    const title = match[1].trim().toLowerCase();
-    const found = kbLive.titles.find((t) => t.title.toLowerCase() === title);
-    map[title] = found ? { id: found.id, title: found.title } : null;
-  }
-  return map;
-}
-
 function handleEditorKeys(event, body, save, cancel, fromTitle = false) {
   const suggest = byId("kbSuggest");
   if (!fromTitle && suggest && !suggest.hidden) {
@@ -681,10 +663,9 @@ function applyFormat(body, kind) {
 function suggestWikiLinks(body) {
   const box = byId("kbSuggest");
   const before = body.value.slice(0, body.selectionStart);
-  const match = before.match(/\[\[([^\]\n|]*)$/);
-  if (!match) { box.hidden = true; return; }
-  const query = match[1].toLowerCase();
-  const found = kbLive.titles.filter((t) => t.title.toLowerCase().includes(query)).slice(0, 7);
+  const query = openWikiQuery(before);
+  if (query === null) { box.hidden = true; return; }
+  const found = wikiSuggestions(kbLive.titles, query);
   if (!found.length) { box.hidden = true; return; }
   box.hidden = false;
   box.innerHTML = found.map((t, i) => `<div class="suggest-item${i === 0 ? " active" : ""}" data-suggest="${escapeHtml(t.title)}">${escapeHtml(t.title)} <span class="muted">${escapeHtml(t.space)}</span></div>`).join("");
@@ -693,9 +674,9 @@ function suggestWikiLinks(body) {
 
 function insertSuggestion(body, title) {
   const before = body.value.slice(0, body.selectionStart);
-  const match = before.match(/\[\[([^\]\n|]*)$/);
-  if (!match) return;
-  body.setSelectionRange(body.selectionStart - match[1].length, body.selectionStart);
+  const query = openWikiQuery(before);
+  if (query === null) return;
+  body.setSelectionRange(body.selectionStart - query.length, body.selectionStart);
   document.execCommand("insertText", false, `${title}]]`);
   byId("kbSuggest").hidden = true;
   body.dispatchEvent(new Event("input"));
