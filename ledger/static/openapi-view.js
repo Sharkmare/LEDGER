@@ -1,48 +1,12 @@
 "use strict";
 
-const OPENAPI_METHODS = ["get", "post", "put", "patch", "delete", "head", "options"];
 const OPENAPI_REQUEST_TIMEOUT_MS = 15000;
 
 function createOpenApiView(spec, options = {}) {
   const baseUrl = options.baseUrl || location.origin;
   const headersFor = options.headersFor || (() => ({}));
 
-  function resolve(schema, depth = 0) {
-    if (schema && schema.$ref && depth < 8) {
-      const parts = schema.$ref.replace(/^#\//, "").split("/");
-      let node = spec;
-      for (const part of parts) node = node && node[part.replace(/~1/g, "/").replace(/~0/g, "~")];
-      return resolve(node || {}, depth + 1);
-    }
-    return schema || {};
-  }
-
-  function exampleOf(schema, depth = 0) {
-    const node = resolve(schema);
-    if (node.example !== undefined) return node.example;
-    if (node.default !== undefined) return node.default;
-    if (node.enum) return node.enum[0];
-    if (depth > 3) return null;
-    if (node.allOf) return Object.assign({}, ...node.allOf.map((part) => exampleOf(part, depth + 1) || {}));
-    if (node.type === "object" || node.properties) {
-      const properties = node.properties || {};
-      const required = node.required || Object.keys(properties).slice(0, 4);
-      const result = {};
-      for (const name of Object.keys(properties)) if (required.includes(name)) result[name] = exampleOf(properties[name], depth + 1);
-      return result;
-    }
-    if (node.type === "array") return [exampleOf(node.items, depth + 1)];
-    if (node.type === "integer" || node.type === "number") return 0;
-    if (node.type === "boolean") return false;
-    return "string";
-  }
-
-  function typeLabel(schema) {
-    const node = resolve(schema);
-    if (schema && schema.$ref) return schema.$ref.split("/").pop();
-    if (node.type === "array") return `array of ${typeLabel(node.items)}`;
-    return node.type || (node.properties ? "object" : "any");
-  }
+  const { resolve, exampleOf, typeLabel, allParameters, collectOperations } = schemaTools(spec);
 
   function enumChips(schema) {
     const node = resolve(schema);
@@ -62,10 +26,6 @@ function createOpenApiView(spec, options = {}) {
     return rows ? `<table class="params"><thead><tr><th>Field</th><th>Type</th><th>Notes</th></tr></thead><tbody>${rows}</tbody></table>` : "";
   }
 
-  function allParameters(item, operation) {
-    return [...(item.parameters || []), ...(operation.parameters || [])].map((p) => resolve(p)).filter((p) => p.name);
-  }
-
   function parameterTable(parameters) {
     if (!parameters.length) return "";
     return `<h4>Parameters</h4><table class="params"><thead><tr><th>Name</th><th>In</th><th>Type</th><th>Description</th></tr></thead><tbody>
@@ -81,17 +41,6 @@ function createOpenApiView(spec, options = {}) {
       const headers = Object.entries(response.headers || {}).map(([name, header]) => `<div class="type">${escapeHtml(name)}: ${escapeHtml(resolve(header).description || "")}</div>`).join("");
       return `<div class="response"><span class="status-code ${String(code).startsWith("2") ? "ok" : "bad"}">${escapeHtml(code)}</span> ${escapeHtml(response.description || "")}${headers}${sample}</div>`;
     }).join("");
-  }
-
-  function collectOperations() {
-    const operations = [];
-    for (const [path, item] of Object.entries(spec.paths || {})) {
-      for (const method of OPENAPI_METHODS.filter((m) => item && item[m])) {
-        const operation = item[method];
-        operations.push({ path, method, operation, item, tag: (operation.tags && operation.tags[0]) || "Other", index: operations.length });
-      }
-    }
-    return operations;
   }
 
   function operationHtml(entry) {
@@ -123,17 +72,11 @@ function createOpenApiView(spec, options = {}) {
 
   async function execute(element, entry) {
     const result = element.querySelector(".result");
-    let target = entry.path;
-    const search = new URLSearchParams();
-    for (const input of element.querySelectorAll(".fields input")) {
-      if (!input.value.trim()) continue;
-      if (input.dataset.in === "path") target = target.replace(`{${input.dataset.name}}`, encodeURIComponent(input.value.trim()));
-      else if (input.dataset.in === "query") search.set(input.dataset.name, input.value.trim());
-    }
+    const request = requestTarget(entry.path, [...element.querySelectorAll(".fields input")].map((input) => ({ in: input.dataset.in, name: input.dataset.name, value: input.value })));
     result.hidden = false;
-    if (/\{[^}]+\}/.test(target)) { result.innerHTML = `<div class="meta">Fill in the path parameters first.</div>`; return; }
+    if (request.unfilled) { result.innerHTML = `<div class="meta">Fill in the path parameters first.</div>`; return; }
     const bodyField = element.querySelector("[data-body]");
-    const address = serverBase() + target + (search.toString() ? "?" + search : "");
+    const address = serverBase() + request.target + (request.query ? "?" + request.query : "");
     const headers = new URL(address).origin === location.origin ? headersFor() : {};
     if (bodyField) headers["Content-Type"] = "application/json";
     const started = performance.now();
