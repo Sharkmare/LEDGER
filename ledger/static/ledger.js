@@ -56,10 +56,6 @@ const byId = (id) => document.getElementById(id);
 function remember(key, value) { try { localStorage.setItem(key, value); } catch (_) { return; } }
 function recall(key, fallback) { try { return localStorage.getItem(key) || fallback; } catch (_) { return fallback; } }
 
-function escapeHtml(text) {
-  return String(text ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
-}
-
 function svg(name) { return `<svg viewBox="0 0 24 24" aria-hidden="true">${ICONS[name]}</svg>`; }
 
 function fillIcons() {
