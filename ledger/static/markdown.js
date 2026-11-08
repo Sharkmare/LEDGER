@@ -21,7 +21,7 @@ const MD_INLINE = new RegExp([
   "\\b([A-Z][A-Z0-9]{1,9}-\\d+)\\b",
 ].join("|"), "g");
 
-const escapeText = typeof escapeHtml === "function" ? escapeHtml : require("./escape.js").escapeHtml;
+if (typeof escapeHtml === "undefined") globalThis.escapeHtml = require("./escape.js").escapeHtml;
 
 function mdSafeUrl(url) {
   const trimmed = String(url).trim();
@@ -45,24 +45,24 @@ function mdInline(text, context) {
   const pattern = new RegExp(MD_INLINE.source, "g");
   let match;
   while ((match = pattern.exec(text)) !== null) {
-    html += escapeText(text.slice(last, match.index));
+    html += escapeHtml(text.slice(last, match.index));
     last = match.index + match[0].length;
     if (match[2] !== undefined) {
-      html += `<code>${escapeText(match[2].replace(/^ (.*) $/, "$1"))}</code>`;
+      html += `<code>${escapeHtml(match[2].replace(/^ (.*) $/, "$1"))}</code>`;
     } else if (match[4] !== undefined) {
       const source = mdSafeImage(match[4]);
-      html += source ? `<img src="${escapeText(source)}" alt="${escapeText(match[3])}"${match[5] ? ` title="${escapeText(match[5])}"` : ""} loading="lazy">` : escapeText(match[0]);
+      html += source ? `<img src="${escapeHtml(source)}" alt="${escapeHtml(match[3])}"${match[5] ? ` title="${escapeHtml(match[5])}"` : ""} loading="lazy">` : escapeHtml(match[0]);
     } else if (match[7] !== undefined) {
       const href = mdSafeUrl(match[7]);
       const external = /^https?:/i.test(href);
-      html += `<a href="${escapeText(href)}"${external ? ' target="_blank" rel="noopener noreferrer"' : ""}${match[8] ? ` title="${escapeText(match[8])}"` : ""}>${mdInline(match[6], context)}</a>`;
+      html += `<a href="${escapeHtml(href)}"${external ? ' target="_blank" rel="noopener noreferrer"' : ""}${match[8] ? ` title="${escapeHtml(match[8])}"` : ""}>${mdInline(match[6], context)}</a>`;
     } else if (match[9] !== undefined) {
       const [target, label] = match[9].split("|");
       const found = context.wiki ? context.wiki[target.trim().toLowerCase()] : undefined;
-      const shown = escapeText((label || target).trim());
+      const shown = escapeHtml((label || target).trim());
       html += found
         ? `<a class="wiki" data-kb-page="${found.id}">${shown}</a>`
-        : `<a class="wiki missing" data-kb-create="${escapeText(target.trim())}" title="No page has this title yet. Click to create it.">${shown}</a>`;
+        : `<a class="wiki missing" data-kb-create="${escapeHtml(target.trim())}" title="No page has this title yet. Click to create it.">${shown}</a>`;
     } else if (match[10] !== undefined || match[11] !== undefined) {
       html += `<strong>${mdInline(match[10] !== undefined ? match[10] : match[11], context)}</strong>`;
     } else if (match[12] !== undefined) {
@@ -70,14 +70,14 @@ function mdInline(text, context) {
     } else if (match[13] !== undefined || match[14] !== undefined) {
       html += `<em>${mdInline(match[13] !== undefined ? match[13] : match[14], context)}</em>`;
     } else if (match[15] !== undefined) {
-      html += `<a href="${escapeText(match[15])}" target="_blank" rel="noopener noreferrer">${escapeText(match[15])}</a>`;
+      html += `<a href="${escapeHtml(match[15])}" target="_blank" rel="noopener noreferrer">${escapeHtml(match[15])}</a>`;
     } else if (match[16] !== undefined) {
       html += context.ticket && context.ticket(match[16])
-        ? `<a class="ticket-link" data-ticket="${escapeText(match[16])}">${escapeText(match[16])}</a>`
-        : escapeText(match[16]);
+        ? `<a class="ticket-link" data-ticket="${escapeHtml(match[16])}">${escapeHtml(match[16])}</a>`
+        : escapeHtml(match[16]);
     }
   }
-  return html + escapeText(text.slice(last));
+  return html + escapeHtml(text.slice(last));
 }
 
 function mdIndent(line) {
@@ -160,8 +160,8 @@ function mdBlocks(lines, context, headings) {
       index += 1;
       while (index < lines.length && !(lines[index].trim().startsWith(marker[0].repeat(marker.length)) && lines[index].trim().replace(new RegExp(`^\\${marker[0]}+`), "") === "")) { body.push(lines[index]); index += 1; }
       index += 1;
-      const language = fence[2] ? ` data-lang="${escapeText(fence[2])}"` : "";
-      out.push(`<div class="code-block"${language}><button type="button" class="copy-code" data-copy-code>Copy</button><pre><code>${escapeText(body.join("\n"))}</code></pre></div>`);
+      const language = fence[2] ? ` data-lang="${escapeHtml(fence[2])}"` : "";
+      out.push(`<div class="code-block"${language}><button type="button" class="copy-code" data-copy-code>Copy</button><pre><code>${escapeHtml(body.join("\n"))}</code></pre></div>`);
       continue;
     }
     const heading = line.match(MD_HEADING);
