@@ -21,7 +21,7 @@ function kbRecents() {
 }
 
 function kbRemember(entry) {
-  const next = [entry, ...kbRecents().filter((r) => !(r.kind === entry.kind && r.id === entry.id))].slice(0, KB_RECENT_LIMIT);
+  const next = recentsWith(kbRecents(), entry, KB_RECENT_LIMIT);
   remember(KB_RECENT_STORAGE, JSON.stringify(next));
 }
 
@@ -39,10 +39,6 @@ function kbExpand(spaceId, ids) {
   const open = kbExpanded(spaceId);
   const next = kbWithExpanded(open, ids);
   if (next.length !== open.length) kbSaveExpanded(spaceId, next);
-}
-
-function kbLevelUrl(spaceId, key, offset, limit) {
-  return `/api/kb/spaces/${spaceId}/children?parent=${key === "root" ? "" : key}&offset=${offset}&limit=${limit}`;
 }
 
 async function loadKbLevel(spaceId, key, onError = (error) => toast(error.message, true)) {
@@ -271,10 +267,6 @@ function renderKbHome() {
   search.addEventListener("keydown", (event) => { if (event.key === "Enter") { const first = byId("kbHomeResults").querySelector("[data-find]"); if (first) first.click(); } });
 }
 
-function snippetHtml(text) {
-  return escapeHtml(text || "").replace(/\u0001/g, "<mark>").replace(/\u0002/g, "</mark>");
-}
-
 function findResultsHtml(found) {
   const section = (title, items, render) => (items.length ? `<div class="find-group"><div class="find-title">${title}</div>${items.map(render).join("")}</div>` : "");
   const pageItem = (p) => `<div class="find-item" tabindex="0" data-find="page" data-id="${p.id}"><span class="title">${escapeHtml(p.title)}</span><span class="snippet">${snippetHtml(p.snippet)}</span><span class="muted">${escapeHtml(p.space.name)}</span></div>`;
@@ -380,19 +372,6 @@ function renderSpaceHome(container) {
   wireKbLinks(container);
   const empty = byId("kbEmptyNew");
   if (empty) empty.addEventListener("click", () => newPageDialog({ space: space.id }));
-}
-
-function reviewBadge(page) {
-  if (page.verified_by && !page.stale) return `<span class="chip tint" style="--tint:var(--status-done)" title="Next review ${escapeHtml(page.review_by)}">verified by ${escapeHtml(page.verified_by)} ${ago(page.verified_at)}</span>`;
-  if (page.stale) return `<span class="chip tint" style="--tint:var(--priority-high)">review was due ${escapeHtml(page.review_by)}</span>`;
-  if (page.review_by) return `<span class="chip" title="Next review">review by ${escapeHtml(page.review_by)}</span>`;
-  return "";
-}
-
-function tocHtml(headings) {
-  const items = headings.filter((h) => h.level <= 3);
-  if (items.length < 2) return "";
-  return `<div class="kb-rail-block"><h4>On this page</h4><ul class="kb-toc">${items.map((h) => `<li style="padding-left:${(h.level - 1) * 12}px"><a href="#${h.id}" data-toc="${h.id}">${escapeHtml(h.text)}</a></li>`).join("")}</ul></div>`;
 }
 
 function pageActionsHtml(page) {
