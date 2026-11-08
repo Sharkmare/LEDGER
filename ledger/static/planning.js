@@ -1,8 +1,6 @@
 "use strict";
 
 const ITERATION_COLORS = { planned: "var(--status-todo)", active: "var(--status-in_progress)", done: "var(--status-done)" };
-const MS_PER_DAY = 86400000;
-const ROADMAP_PAD_DAYS = 10;
 const ROADMAP_LABEL_WIDTH = 190;
 
 function ruleChips(rules) {
@@ -178,20 +176,6 @@ async function loadRoadmap() {
   state.pageData = { roadmap: await guarded(() => api("GET", "/api/roadmap" + (state.project ? `?project=${state.project}` : ""))) };
 }
 
-function parseDay(text) { return new Date(`${text}T00:00:00`).getTime(); }
-
-function monthStarts(first, last) {
-  const months = [];
-  const cursor = new Date(first);
-  cursor.setDate(1);
-  cursor.setHours(0, 0, 0, 0);
-  while (cursor.getTime() <= last) {
-    months.push({ at: cursor.getTime(), label: cursor.toLocaleDateString(undefined, { month: "short", year: "2-digit" }) });
-    cursor.setMonth(cursor.getMonth() + 1);
-  }
-  return months;
-}
-
 function renderRoadmap() {
   const roadmap = state.pageData.roadmap;
   if (!roadmap || (!roadmap.iterations.length && !roadmap.epics.length)) {
@@ -199,30 +183,21 @@ function renderRoadmap() {
       ${roadmap && roadmap.unscheduled_epics ? `<p>${roadmap.unscheduled_epics} epics have no dates yet.</p>` : ""}</div>`;
     return;
   }
-  const first = parseDay(roadmap.range.start) - ROADMAP_PAD_DAYS * MS_PER_DAY;
-  const last = parseDay(roadmap.range.end) + ROADMAP_PAD_DAYS * MS_PER_DAY;
-  const span = last - first;
-  const place = (start, end) => ({ left: ((start - first) / span) * 100, width: Math.max(((end - start) / span) * 100, 0.6) });
-  const today = Date.now();
-  const bar = (start, end, tint, label, percent, attrs) => {
-    const { left, width } = place(start, end + MS_PER_DAY);
-    return `<div class="rm-bar" style="left:${left}%;width:${width}%;--tint:${tint}" ${attrs} tabindex="0" title="${escapeHtml(label)}"><span class="fill" style="width:${percent}%"></span><span>${escapeHtml(label)}</span></div>`;
-  };
-  const iterationRows = roadmap.iterations.map((i) => {
-    const percent = i.points ? Math.round((i.points_done / i.points) * 100) : i.tickets ? Math.round((i.done / i.tickets) * 100) : 0;
+  const layout = roadmapLayout(roadmap, Date.now());
+  const bar = ({ left, width, percent }, tint, label, attrs) =>
+    `<div class="rm-bar" style="left:${left}%;width:${width}%;--tint:${tint}" ${attrs} tabindex="0" title="${escapeHtml(label)}"><span class="fill" style="width:${percent}%"></span><span>${escapeHtml(label)}</span></div>`;
+  const iterationRows = layout.iterations.map((row) => {
+    const i = row.iteration;
     return `<div class="rm-row"><div class="rm-label" title="${escapeHtml(i.name)}">${escapeHtml(state.project ? i.name : `${i.project} ${i.name}`)}</div>
-      <div class="rm-track">${bar(parseDay(i.start), parseDay(i.end), ITERATION_COLORS[i.state], `${i.name} ${percent}%`, percent, "")}</div></div>`;
+      <div class="rm-track">${bar(row, ITERATION_COLORS[i.state], `${i.name} ${row.percent}%`, "")}</div></div>`;
   }).join("");
-  const epicRows = roadmap.epics.map((epic) => {
-    const start = epic.start ? parseDay(epic.start) : parseDay(epic.due) - 14 * MS_PER_DAY;
-    const end = epic.due ? parseDay(epic.due) : parseDay(epic.start) + 14 * MS_PER_DAY;
-    const progress = epic.progress;
-    const percent = progress.total ? Math.round((progress.done / progress.total) * 100) : epic.status === "done" ? 100 : 0;
+  const epicRows = layout.epics.map((row) => {
+    const epic = row.epic;
     return `<div class="rm-row"><div class="rm-label" title="${escapeHtml(epic.title)}"><span class="key">${epic.key}</span> ${escapeHtml(epic.title)}</div>
-      <div class="rm-track">${bar(start, end, statusColor(epic.status), `${progress.done}/${progress.total} done`, percent, `data-open-ticket="${epic.key}"`)}</div></div>`;
+      <div class="rm-track">${bar(row, statusColor(epic.status), `${epic.progress.done}/${epic.progress.total} done`, `data-open-ticket="${epic.key}"`)}</div></div>`;
   }).join("");
-  const months = monthStarts(first, last).map((m) => `<div class="rm-month" style="left:${((m.at - first) / span) * 100}%">${m.label}</div>`).join("");
-  const todayLine = today >= first && today <= last ? `<div class="rm-today" style="left:calc(${ROADMAP_LABEL_WIDTH}px + (100% - ${ROADMAP_LABEL_WIDTH}px) * ${(today - first) / span})"></div>` : "";
+  const months = layout.months.map((m) => `<div class="rm-month" style="left:${m.left}%">${m.label}</div>`).join("");
+  const todayLine = layout.todayOffset === null ? "" : `<div class="rm-today" style="left:calc(${ROADMAP_LABEL_WIDTH}px + (100% - ${ROADMAP_LABEL_WIDTH}px) * ${layout.todayOffset})"></div>`;
   byId("main").innerHTML = `<div class="roadmap">${todayLine}<div class="rm-head">${months}</div>
     ${iterationRows ? `<div class="rm-group">Iterations</div>${iterationRows}` : ""}${epicRows ? `<div class="rm-group">Epics</div>${epicRows}` : ""}
     ${roadmap.unscheduled_epics ? `<p class="muted">${roadmap.unscheduled_epics} epics have no dates and are not shown.</p>` : ""}</div>`;
