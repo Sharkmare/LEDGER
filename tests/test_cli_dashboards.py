@@ -52,6 +52,20 @@ class DashboardCliTests(LiveServerCase):
         with self.assertRaises(SystemExit):
             self.cli("dashboard", "show", str(created["id"]))
 
+    def test_module_settings_can_be_given_with_setting(self):
+        self.cli("new-project", "SET", "Settings")
+        self.cli("add", "SET", "a")
+        self.assertIn("created", self.cli("metric", "count", "--project", "SET", "--setting", "measure=created", "--setting", "days=3"))
+        with self.assertRaises(SystemExit):
+            self.cli("metric", "count", "--setting", "measure")
+        with self.assertRaises(SystemExit):
+            self.cli("metric", "count", "--setting", "days=0")
+        with self.assertRaises(SystemExit):
+            self.cli("metric", "pie")
+
+    def test_a_kind_without_a_printer_prints_its_data(self):
+        self.assertIn('"tickets": 4', "".join(ledger_cli.metric_lines("custom", {"tickets": 4})))
+
 
 if __name__ == "__main__":
     unittest.main()

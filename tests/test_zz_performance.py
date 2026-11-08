@@ -223,12 +223,12 @@ class PerformanceTests(unittest.TestCase):
     def test_metrics_over_many_tickets(self):
         now = time.time()
         for name, work, target in (
-            ("metric: group by status", lambda: metrics.group_metric(self.connection, {}, "status"), 160),
-            ("metric: group by tag", lambda: metrics.group_metric(self.connection, {}, "label"), 220),
-            ("metric: trend, 60 days", lambda: metrics.trend_metric(self.connection, {}, 60, None, now), 200),
-            ("metric: lead and cycle time", lambda: metrics.cycle_metric(self.connection, {}, 90, now), 400),
-            ("metric: aging", lambda: metrics.aging_metric(self.connection, {}, 5, now), 160),
-            ("metric: workload", lambda: metrics.workload_metric(self.connection, {}, 8, now), 160),
+            ("metric: group by status", lambda: metrics.evaluate(self.connection, {"kind": "group", "group_by": "status"}, now), 160),
+            ("metric: group by tag", lambda: metrics.evaluate(self.connection, {"kind": "group", "group_by": "label"}, now), 220),
+            ("metric: trend, 60 days", lambda: metrics.evaluate(self.connection, {"kind": "trend", "days": 60}, now), 200),
+            ("metric: lead and cycle time", lambda: metrics.evaluate(self.connection, {"kind": "cycle", "days": 90}, now), 400),
+            ("metric: aging", lambda: metrics.evaluate(self.connection, {"kind": "aging", "limit": 5}, now), 160),
+            ("metric: workload", lambda: metrics.evaluate(self.connection, {"kind": "workload", "limit": 8}, now), 160),
         ):
             entry = measure(name, 1, work, target, "loops over every row in Python; an aggregate query or a native pass would be faster")
             self.assertLessEqual(entry["ms"], entry["budget_ms"], name)

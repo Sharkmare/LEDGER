@@ -6,9 +6,9 @@ import os
 import threading
 from pathlib import Path
 
-from .web import App, HTTPError, abort, g, jsonify, request, send_from_directory
+from .web import App, HTTPError, Response, abort, g, jsonify, request, send_from_directory
 
-from . import bulk, dependencies, kb, manage, metrics, openapi, organise, people, questions, similar, store, usersettings, wip
+from . import bulk, dashmodules, dependencies, kb, manage, metrics, openapi, organise, people, questions, similar, store, usersettings, wip
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_PORT = 6680
@@ -48,8 +48,10 @@ API_HELP = {
         "GET|POST /api/tags | PATCH|DELETE /api/tags/<name> | POST /api/tags/<name>/merge {into}",
         "GET|POST /api/templates | POST /api/templates/defaults | GET|PATCH|DELETE /api/templates/<id>",
         "PATCH /api/projects/<KEY>  |  GET /api/tickets/<KEY-N>/tree",
-        "POST /api/metrics {kind,filters,...}  one measure; kinds count group trend burndown cycle aging workload velocity overdue",
+        "POST /api/metrics {kind,filters,...}  one measure; kind is the id of a loaded module, see GET /api/modules",
         "GET|POST /api/dashboards | POST /api/dashboards/defaults | GET|PATCH|DELETE /api/dashboards/<id> | GET /api/dashboards/<id>/data",
+        "GET  /api/modules                     dashboard modules loaded from the modules folder at launch, with their settings and any that failed to load",
+        "GET  /api/modules/<id>/script         the browser script that draws a module's widget",
         "GET /api/kb/overview  /api/kb/templates  /api/kb/search?q=  /api/search?q=   knowledge base and one search over pages, tools and tickets",
         "GET|POST /api/kb/spaces | GET|PATCH|DELETE /api/kb/spaces/<id> | GET /api/kb/spaces/<id>/tree",
         "GET|POST /api/kb/pages | GET|PATCH|DELETE /api/kb/pages/<id> | GET .../versions, .../versions/<n>, .../diff?from=&to= | POST .../restore",
@@ -65,8 +67,9 @@ API_HELP = {
 }
 
 
-def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Path | None = None) -> App:
+def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Path | None = None, module_folders: list[str | Path] | None = None) -> App:
     app = App()
+    modules = dashmodules.activate(dashmodules.load([Path(folder) for folder in module_folders] if module_folders else dashmodules.default_folders()))
     connection = store.connect(database_path)
     if not connection.execute("SELECT 1 FROM organisation").fetchone() and not connection.execute("SELECT 1 FROM projects").fetchone():
         organise.set_organisation(connection, organise.DEFAULT_ORGANISATION)
@@ -464,6 +467,14 @@ def create_app(database_path: str | Path = DEFAULT_DATABASE, font_dir: str | Pat
     def wip_set(status):
         return jsonify(wip.set_limit(connection, status, body_json().get("limit")))
 
+    @app.get("/api/modules")
+    def dashboard_modules():
+        return jsonify(modules.describe())
+
+    @app.get("/api/modules/<module_id>/script")
+    def dashboard_module_script(module_id):
+        return Response(modules.script_of(module_id).read_bytes(), 200, {"Content-Type": "application/javascript; charset=utf-8", "Cache-Control": "no-cache"})
+
     @app.post("/api/metrics")
     def metric():
         return jsonify(metrics.evaluate(connection, body_json()))
@@ -681,8 +692,9 @@ def main() -> None:
     parser.add_argument("--port", type=int, default=int(os.environ.get("LEDGER_PORT", DEFAULT_PORT)))
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--database", default=os.environ.get("LEDGER_DB", str(DEFAULT_DATABASE)))
+    parser.add_argument("--modules", default=None, help=f"folders of dashboard modules, separated by {os.pathsep!r}; replaces the default modules folder (or {dashmodules.FOLDERS_ENV})")
     arguments = parser.parse_args()
-    create_app(arguments.database).run(host=arguments.host, port=arguments.port, threaded=True)
+    create_app(arguments.database, module_folders=dashmodules.parse_folders(arguments.modules) if arguments.modules else None).run(host=arguments.host, port=arguments.port, threaded=True)
 
 
 if __name__ == "__main__":

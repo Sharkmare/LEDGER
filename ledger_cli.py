@@ -387,7 +387,7 @@ def add_planning_commands(commands) -> None:
     commands.add_parser("setting-clear", help="clear one view setting for --as").add_argument("key")
 
     metric = commands.add_parser("metric", help="measure one thing now")
-    metric.add_argument("kind", choices=["count", "group", "trend", "burndown", "cycle", "aging", "workload", "velocity", "overdue"])
+    metric.add_argument("kind", help="the id of a dashboard module: count group trend burndown cycle aging workload velocity overdue, or a custom one")
     for name in ("project", "area", "iteration", "type", "status", "priority", "assignee", "label"):
         metric.add_argument(f"--{name}")
     metric.add_argument("--open", action="store_true", help="only open tickets")
@@ -395,6 +395,7 @@ def add_planning_commands(commands) -> None:
     metric.add_argument("--measure", choices=["total", "created", "closed"])
     metric.add_argument("--days", type=int)
     metric.add_argument("--limit", type=int)
+    metric.add_argument("--setting", action="append", default=[], metavar="NAME=VALUE", help="any other setting the module declares; repeat for several")
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -615,12 +616,22 @@ def run_dashboard(arguments, base, actor):
     return call(base, "DELETE", f"/api/dashboards/{arguments.id}", actor)
 
 
+def parse_settings(pairs: list[str]) -> dict:
+    settings = {}
+    for pair in pairs:
+        name, separator, value = pair.partition("=")
+        if not separator or not name.strip():
+            raise SystemExit(f"ledger: --setting wants NAME=VALUE, not {pair!r}")
+        settings[name.strip()] = value
+    return settings
+
+
 def run_metric(arguments, base, actor):
     filters = drop_empty({name: getattr(arguments, name) for name in ("project", "area", "iteration", "type", "status", "priority", "assignee", "label")})
     if arguments.open:
         filters["open"] = True
     payload = drop_empty({"kind": arguments.kind, "filters": filters, "group_by": arguments.group_by, "measure": arguments.measure,
-                          "days": arguments.days, "limit": arguments.limit})
+                          "days": arguments.days, "limit": arguments.limit, **parse_settings(arguments.setting)})
     return call(base, "POST", "/api/metrics", actor, payload)
 
 
@@ -648,7 +659,9 @@ def metric_lines(kind: str, data: dict) -> list[str]:
     if kind == "velocity":
         return [f"{item['name']:<20} committed {item['committed']:g}  completed {item['completed']:g}" for item in data["iterations"]] + [
                 f"average {data['average']}"]
-    return [f"{data['total']} overdue"] + [f"{item['key']:<9} {item['days_late']:>3} days late  {item['title']}" for item in data["items"]]
+    if kind == "overdue":
+        return [f"{data['total']} overdue"] + [f"{item['key']:<9} {item['days_late']:>3} days late  {item['title']}" for item in data["items"]]
+    return json.dumps(data, indent=2).splitlines()
 
 
 def read_text_file(path: str) -> str:

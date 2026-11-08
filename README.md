@@ -17,6 +17,7 @@ Open http://127.0.0.1:6680/. The server listens on loopback only. Data lives in 
 | Port | `--port` | `LEDGER_PORT` |
 | Database file | `--database` | `LEDGER_DB` |
 | Font directory | | `LEDGER_FONT_DIR` |
+| Dashboard modules folders | `--modules` | `LEDGER_MODULES` |
 
 ## How work is organised
 
@@ -61,7 +62,7 @@ Tickets             any type, with a parent and sub-tickets to any depth
 - **Iterations** have dates, a goal and a state (planned, active, done). The Plan view puts the backlog beside the iterations; drag a ticket onto one to plan it. The Roadmap lays iterations and dated epics on a timeline.
 - **Tags** are free text on tickets. Register one to give it a colour and description, rename it everywhere, merge two, or delete one.
 - **Templates** pre-fill the Create ticket dialog: type, priority, status, a description outline, tags, estimate.
-- **Dashboards** are sets of widgets: counts with change against the previous period, breakdowns (bars or donut) by status, type, priority, assignee, tag, project, area or iteration, created and closed trends, burndown, lead and cycle time, age of open work, workload per person, velocity, overdue work. Every widget can filter by project, area, type, priority, assignee, tag and open work. Edit a dashboard to add, move, change or remove widgets, or make a new one.
+- **Dashboards** are sets of widgets: counts with change against the previous period, breakdowns (bars or donut) by status, type, priority, assignee, tag, project, area or iteration, created and closed trends, burndown, lead and cycle time, age of open work, workload per person, velocity, overdue work. Every widget can filter by project, area, type, priority, assignee, tag and open work. Edit a dashboard to add, move, change or remove widgets, or make a new one. Each kind of widget is a module loaded from the `modules` folder, and you can add your own (see Dashboard modules).
 
 ## Knowledge base
 
@@ -93,6 +94,85 @@ Press `?` for the shortcuts: `c` create, `/` search, `s` `b` `l` for the views, 
 ### Saved view settings
 
 Hidden ticket types, hidden board columns and the list sort follow your name, not the browser. The server keeps them per name (compared in lowercase), so a second browser, a cleared browser or another machine shows the same choices once you enter your name in the profile menu. On load and whenever you change the name, the page asks the server: a value the server has wins and is copied into the browser as an offline cache; a choice that only this browser has is uploaded once, so nothing set before this feature is lost; with neither, the default applies. Changing a setting saves it to the server and the browser, and a toast says if the server refused it. If the server cannot be reached, the browser copy is used silently. Settings need a name: the `anonymous` name is refused. `GET /api/settings` returns your settings, `PUT /api/settings/<key>` with `{"value": ...}` sets one and `DELETE /api/settings/<key>` clears it. The keys are `hidden_types` (a list of ticket types), `hidden_statuses` (a list of statuses) and `sort` (`{"field": "priority", "direction": "desc"}`, with an empty field for the default order). Anything else is refused with a message.
+
+## Dashboard modules
+
+Every dashboard widget is a module. On start the server reads the `modules` folder in the repository and loads each module it finds there. The nine built-in widgets (`count`, `group`, `trend`, `burndown`, `cycle`, `aging`, `workload`, `velocity`, `overdue`) are modules in that folder, loaded the same way as one you add. The dashboards page builds its "Add widget" list, its edit forms and its drawing from what was loaded.
+
+To add your own, drop a file into `modules/` and restart the server. `GET /api/modules` (or the list at the top of a dashboard page, when something failed) shows what loaded and, for anything skipped, the reason. A module that fails to load is logged and skipped; the server and the other modules carry on.
+
+| Option | Flag | Environment variable |
+|---|---|---|
+| Modules folders | `--modules` | `LEDGER_MODULES` |
+
+The default is the `modules` folder next to `ledger/`. The flag or the variable replaces it with one or more folders separated by `;` on Windows and `:` elsewhere, so keep the default in the list if you still want the built-ins. When two modules claim the same id, the first one found wins and the other is reported.
+
+### Writing a module
+
+A module is a Python file `modules/NAME.py` with an optional browser script `modules/NAME.js` beside it. A folder works as well: `modules/NAME/module.py` and `modules/NAME/ui.js`. Names starting with `_` or `.` are ignored, so `_helpers.py` is a safe place for shared code. A module runs inside the server with the server's rights, so only drop in code you trust.
+
+The Python file declares a `MODULE` dict and a `data` function. This is `examples/modules/stale.py`, ready to copy into `modules/`:
+
+```python
+from ledger import modulekit
+
+MODULE = {
+    "id": "stale",
+    "title": "Stale work",
+    "description": "Open tickets nobody has touched for a while, longest quiet first",
+    "filters": True,
+    "settings": [
+        {"name": "days", "label": "Quiet for at least (days)", "kind": "number", "default": 14, "min": 1, "max": 365},
+        {"name": "limit", "label": "Rows to show", "kind": "number", "default": 5, "min": 1, "max": 20},
+    ],
+}
+
+
+def data(connection, settings, filters, now):
+    cutoff = now - settings["days"] * modulekit.SECONDS_PER_DAY
+    rows = modulekit.ticket_rows(connection, {**filters, "open": True}, "project_key, number, title, updated")
+    quiet = sorted((row for row in rows if row["updated"] <= cutoff), key=lambda row: row["updated"])
+    return {"total": len(quiet), "days": settings["days"],
+            "items": [{"key": f"{row['project_key']}-{row['number']}", "title": row["title"],
+                       "quiet_days": int((now - row["updated"]) / modulekit.SECONDS_PER_DAY)} for row in quiet[:settings["limit"]]]}
+```
+
+| `MODULE` field | Meaning |
+|---|---|
+| `id` | Required. Lower case letters, digits, `-` and `_`, starting with a letter, up to 40 characters. Widgets store it as their `kind`. |
+| `title` | Required. The name in the "Add widget" list and the default widget title. |
+| `description` | Shown in the edit form. |
+| `size` | Default width in columns, 1 to 3 (default 1). |
+| `order` | Sorts the "Add widget" list, lowest first (default 100). |
+| `filters` | `True` for every ticket filter, or a list from `project area iteration type status priority assignee label open`. Default none. The edit form offers only these, and the server refuses others. |
+| `settings` | A list of settings, below. |
+
+Each setting has a `name` (lower case, not `id title kind size filters`, not starting with `f_`), a `label`, a `kind`, an optional `default` and `help`. The kinds:
+
+| `kind` | Value | Extra fields |
+|---|---|---|
+| `number` | A whole number | `min`, `max` (defaults 1 and 1000000) |
+| `select` | One of a fixed list | `options`: strings, or `{"value", "label"}` objects. An option with value `""` means "not set". |
+| `text` | Up to 500 characters | |
+| `checkbox` | `True` or `False` | |
+| `iteration` | An iteration id, chosen from a list | `empty_label`, the text for "none" |
+
+`data(connection, settings, filters, now)` returns anything JSON can hold. `connection` is the SQLite connection, `settings` holds the cleaned values with defaults filled in, `filters` the cleaned filters and `now` the time as a Unix timestamp. Raise `ledger.store.LedgerError` for a problem the person can fix (it shows in the widget); any other exception is logged and shows as a failure of that one widget. `ledger.modulekit` offers `ticket_rows` (tickets matching the filters), `day`, `bucketed`, `whole_number`, `FILTER_KEYS`, `SECONDS_PER_DAY` and `UNASSIGNED`.
+
+The browser script draws the widget. It calls `registerDashboardModule` with the module id and a `render` function that returns HTML:
+
+```js
+registerDashboardModule("stale", {
+  render(widget, data, h) {
+    const rows = data.items.map((item) => `<tr><td class="key"><span class="key">${h.escapeHtml(item.key)}</span></td><td>${h.ticketLink(item.key, item.title)}</td><td class="num">${item.quiet_days} d quiet</td></tr>`);
+    return `<div class="kpi">${data.total}</div><div class="kpi-sub">open tickets untouched for ${data.days} days or more</div>${rows.length ? h.ticketTable(rows) : ""}`;
+  },
+});
+```
+
+`widget` is the saved widget (its settings and filters), `data` is what `data()` returned and `h` holds the helpers: `escapeHtml`, `formatNumber`, `hbars`, `donut`, `lineChart`, `chartLegend`, `barPairs`, `ticketTable`, `ticketLink` (a link that opens the ticket), `bucketColor`, `statusColor`, `priorityColor`, `typeColor`, `tagColor` and `nameColor`. Escape anything that came from tickets. Without a script a module still works and its data shows as plain text. The script is read when the page loads it, so edits to `.js` files show up on refresh; Python changes need a restart.
+
+Widgets saved on a dashboard keep working if their module is removed: the widget shows an error naming the missing module until you remove or restore it. `POST /api/metrics {"kind": "stale", "days": 30}` and `python ledger_cli.py metric stale --setting days=30` run any module once.
 
 ## Command line
 
@@ -174,7 +254,11 @@ The interface uses the system font stack. To use other fonts, put a `fonts.css` 
 | `ledger/organise.py` | Organisation, areas, boards, iterations, plan and roadmap |
 | `ledger/manage.py` | Tags and templates |
 | `ledger/people.py` | Registered assignees and the per-person queue |
-| `ledger/metrics.py` | Metrics, widgets and dashboards |
+| `ledger/metrics.py` | Widget checking and evaluation, and dashboards |
+| `ledger/dashmodules.py` | Finds, loads and validates the modules in the modules folders |
+| `ledger/modulekit.py` | Helpers for module authors |
+| `modules/` | The dashboard modules, built-in and yours: a `.py` file and an optional `.js` file each |
+| `examples/modules/` | An example module to copy into `modules/` |
 | `ledger/kb.py` | Spaces, pages, versions, search, tools and their OpenAPI descriptions |
 | `ledger/web.py` | The HTTP layer: router, request and response, threaded server, test client |
 | `ledger/miniyaml.py` | The YAML reader used for OpenAPI files |

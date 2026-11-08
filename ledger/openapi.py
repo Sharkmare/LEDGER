@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from . import bulk, kb, metrics, people_spec, questions, store, usersettings
+from . import bulk, dashmodules, kb, people_spec, questions, store, usersettings
 
 API_VERSION = "1.3.0"
 KEY_EXAMPLE = "APP-1"
@@ -424,6 +424,12 @@ def dashboard_paths() -> dict:
         "/api/metrics": {"post": operation("Metrics", "Measure one thing: a count, a breakdown, a trend, a burndown and more", "metric",
                          {"200": json_response("The widget as understood, and its data", ref("MetricResult")), "400": ERRORS["400"], "404": ERRORS["404"]},
                          body=json_body(ref("Widget")))},
+        "/api/modules": {"get": operation("Dashboards", "The dashboard modules loaded from the modules folder at launch, and the ones that failed to load", "listModules",
+                                          {"200": json_response("Folders scanned, loaded modules with their settings, and failures with the reason", ref("ModuleListing"))})},
+        "/api/modules/{module_id}/script": {"get": operation(
+            "Dashboards", "The browser script that draws a module's widget", "moduleScript",
+            {"200": {"description": "JavaScript that calls registerDashboardModule", "content": {"application/javascript": {"schema": {"type": "string"}}}}, "404": ERRORS["404"]},
+            [name_parameter("module_id", "Module id")])},
         "/api/dashboards/defaults": {"post": operation("Dashboards", "Add the built-in dashboards that are missing", "seedDashboards",
                                                        {"201": json_response("Dashboards created", {"type": "array", "items": ref("Dashboard")})})},
         "/api/dashboards/{dashboard_id}/data": {"get": operation(
@@ -439,21 +445,28 @@ def dashboard_paths() -> dict:
 def dashboard_schemas() -> dict:
     count = {"type": "integer"}
     return {
-        "Widget": {"type": "object", "required": ["kind"], "properties": {
+        "Widget": {"type": "object", "required": ["kind"], "additionalProperties": True, "description": "Other fields are the settings the module declares in GET /api/modules", "properties": {
             "id": {"type": "string", "description": "Assigned when omitted"},
-            "kind": {"type": "string", "enum": list(metrics.METRIC_KINDS)}, "title": {"type": "string"},
+            "kind": {"type": "string", "description": "The id of a loaded module"}, "title": {"type": "string"},
             "size": {"type": "integer", "minimum": 1, "maximum": 3, "description": "Columns the widget spans"},
-            "filters": {"type": "object", "description": "project, area, iteration, type, status, priority, assignee, label, open",
+            "filters": {"type": "object", "description": "Only the filters the module lists in its filters field: project, area, iteration, type, status, priority, assignee, label, open",
                         "properties": {"project": {"type": "string"}, "area": {"type": "string"}, "iteration": count,
                                        "type": {"type": "string"}, "status": {"type": "string"}, "priority": {"type": "string"},
-                                       "assignee": {"type": "string"}, "label": {"type": "string"}, "open": {"type": "boolean"}}},
-            "group_by": {"type": "string", "enum": list(metrics.GROUP_FIELDS), "description": "For group widgets"},
-            "chart": {"type": "string", "enum": list(metrics.CHART_STYLES), "description": "For group widgets"},
-            "measure": {"type": "string", "enum": list(metrics.COUNT_MEASURES), "description": "For count widgets"},
-            "days": {"type": "integer", "minimum": 1, "maximum": metrics.MAX_DAYS, "description": "Window for counts, trends and cycle time"},
-            "interval": {"type": "string", "enum": list(metrics.INTERVALS), "description": "For trend widgets"},
-            "iteration": {"type": "integer", "description": "For burndown widgets; the current iteration when omitted"},
-            "limit": {"type": "integer", "minimum": 1, "maximum": metrics.MAX_LIMIT}}},
+                                       "assignee": {"type": "string"}, "label": {"type": "string"}, "open": {"type": "boolean"}}}}},
+        "ModuleSetting": {"type": "object", "required": ["name", "kind"], "properties": {
+            "name": {"type": "string"}, "label": {"type": "string"}, "kind": {"type": "string", "enum": list(dashmodules.SETTING_KINDS)},
+            "default": {"description": "Used when the widget gives no value"}, "min": {"type": "integer"}, "max": {"type": "integer"},
+            "options": {"type": "array", "items": {"type": "object", "properties": {"value": {"type": "string"}, "label": {"type": "string"}}}},
+            "help": {"type": "string"}, "empty_label": {"type": "string"}}},
+        "DashboardModule": {"type": "object", "properties": {
+            "id": {"type": "string"}, "title": {"type": "string"}, "description": {"type": "string"}, "size": {"type": "integer"}, "order": {"type": "integer"},
+            "filters": {"type": "array", "items": {"type": "string"}, "description": "The ticket filters the module honours"},
+            "settings": {"type": "array", "items": ref("ModuleSetting")}, "folder": {"type": "string"}, "file": {"type": "string"},
+            "script": {"type": "string", "nullable": True, "description": "Path of the browser script, or null when the module has none"}}},
+        "ModuleFailure": {"type": "object", "properties": {"folder": {"type": "string"}, "file": {"type": "string"}, "error": {"type": "string"}}},
+        "ModuleListing": {"type": "object", "properties": {
+            "folders": {"type": "array", "items": {"type": "string"}}, "modules": {"type": "array", "items": ref("DashboardModule")},
+            "failures": {"type": "array", "items": ref("ModuleFailure")}}},
         "MetricResult": {"type": "object", "properties": {"widget": ref("Widget"), "data": {"type": "object", "description": "Shape depends on the kind"}}},
         "NewDashboard": {"type": "object", "required": ["name"], "properties": {
             "name": {"type": "string", "example": "Overview"}, "description": {"type": "string"},

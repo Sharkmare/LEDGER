@@ -1,11 +1,5 @@
 "use strict";
 
-const WIDGET_KINDS = {
-  count: "Count with change", group: "Breakdown", trend: "Created and closed", burndown: "Burndown", cycle: "Lead and cycle time",
-  aging: "Age of open work", workload: "Workload by person", velocity: "Velocity", overdue: "Overdue work",
-};
-const GROUP_LABELS = { status: "Status", type: "Type", priority: "Priority", assignee: "Assignee", label: "Tag", project: "Project", area: "Area", iteration: "Iteration" };
-
 function bucketColor(field, bucket) {
   if (field === "status") return statusColor(bucket.key);
   if (field === "priority") return priorityColor(bucket.key);
@@ -22,76 +16,43 @@ function ticketLink(key, title) {
   return `<a data-open-ticket="${escapeHtml(key)}">${escapeHtml(title)}</a>`;
 }
 
-const WIDGET_RENDERERS = {
-  count(widget, data) {
-    const sign = data.delta > 0 ? "+" : "";
-    const direction = widget.measure === "closed" ? (data.delta > 0 ? "good" : data.delta < 0 ? "bad" : "") : "";
-    const against = widget.measure === "total" ? `${data.days} days ago` : `the ${data.days} days before`;
-    return `<div class="kpi">${data.value}</div><div class="kpi-sub"><span class="delta ${direction}">${sign}${data.delta}</span> against ${against} (${data.previous})</div>`;
-  },
-  group(widget, data) {
-    const colorOf = (bucket) => bucketColor(data.field, bucket);
-    return widget.chart === "donut" ? donut(data.buckets, colorOf) : hbars(data.buckets, colorOf);
-  },
-  trend(widget, data) {
-    const labels = data.series.map((p) => p.date);
-    const created = { name: "Created", color: "var(--accent)", values: data.series.map((p) => p.created) };
-    const closed = { name: "Closed", color: "var(--status-done)", values: data.series.map((p) => p.closed) };
-    return `${lineChart(labels, [created, closed])}${chartLegend([created, closed])}
-      <div class="kpi-sub">${data.created} created, ${data.closed} closed in ${data.days} days, by ${data.interval}</div>`;
-  },
-  burndown(widget, data) {
-    const labels = data.days.map((d) => d.date);
-    const ideal = { name: "Ideal", color: "var(--muted)", values: data.days.map((d) => d.ideal) };
-    const remaining = { name: "Remaining", color: "var(--status-in_progress)", values: data.days.map((d) => d.remaining) };
-    const left = [...data.days].reverse().find((d) => d.remaining !== null);
-    return `<div class="kpi-sub"><strong>${escapeHtml(data.iteration.name)}</strong> ${data.iteration.start} to ${data.iteration.end}, ${left ? formatNumber(left.remaining) : "-"} of ${formatNumber(data.total)} ${data.unit} left</div>
-      ${lineChart(labels, [ideal, remaining], { dashed: [0] })}${chartLegend([ideal, remaining])}`;
-  },
-  cycle(widget, data) {
-    if (!data.closed) return `<div class="widget-error">Nothing was finished in the last ${data.days} days.</div>`;
-    const show = (value) => (value === null ? "-" : `${formatNumber(value)} d`);
-    return `<div class="kpi">${show(data.lead.median)}</div><div class="kpi-sub">median lead time, ${data.closed} finished in ${data.days} days</div>
-      <div class="kpi-sub">average ${show(data.lead.average)}, 85% within ${show(data.lead.p85)}. Cycle time (in progress to done): median ${show(data.cycle.median)}</div>
-      ${hbars(data.histogram.map((b) => ({ name: b.label, value: b.value })), () => "var(--accent)")}`;
-  },
-  aging(widget, data) {
-    const oldest = data.oldest.map((item) => `<tr><td class="key"><span class="key">${escapeHtml(item.key)}</span></td><td>${ticketLink(item.key, item.title)}</td><td class="num">${item.age_days} d</td></tr>`);
-    return `${hbars(data.buckets.map((b) => ({ name: b.label, value: b.value })), () => "var(--priority-medium)")}${oldest.length ? `<div class="kpi-sub">Oldest</div>${ticketTable(oldest)}` : ""}`;
-  },
-  workload(widget, data) {
-    if (!data.people.length) return `<div class="widget-error">No open work.</div>`;
-    const bars = hbars(data.people.map((p) => ({ name: p.name, value: p.tickets, points: p.points, overdue: p.overdue })), (b) => nameColor(b.name),
-      (b) => `${b.value}`);
-    const detail = data.people.filter((p) => p.points || p.overdue).map((p) => `${escapeHtml(p.name)}: ${formatNumber(p.points)} points${p.overdue ? `, ${p.overdue} overdue` : ""}`);
-    return bars + (detail.length ? `<div class="kpi-sub">${detail.join("  |  ")}</div>` : "") + (data.more ? `<div class="kpi-sub">and ${data.more} more</div>` : "");
-  },
-  velocity(widget, data) {
-    return `${barPairs(data.iterations)}${chartLegend([{ name: "Committed", color: "var(--muted)" }, { name: "Completed", color: "var(--status-done)" }])}
-      <div class="kpi-sub">${data.average === null ? "No average yet" : `Average ${formatNumber(data.average)} points per iteration`}</div>`;
-  },
-  overdue(widget, data) {
-    const rows = data.items.map((item) => `<tr><td class="key"><span class="key">${escapeHtml(item.key)}</span></td><td>${ticketLink(item.key, item.title)}</td><td class="num">${item.days_late} d late</td></tr>`);
-    return `<div class="kpi">${data.total}</div><div class="kpi-sub">open tickets past their due date</div>${rows.length ? ticketTable(rows) : ""}`;
-  },
-};
-
-function widgetBody(widget, data) {
-  if (!data) return `<div class="widget-error">Loading</div>`;
-  if (data.error) return `<div class="widget-error">${escapeHtml(data.error)}</div>`;
-  return WIDGET_RENDERERS[widget.kind](widget, data);
+function dashboardHelpers() {
+  return { escapeHtml, formatNumber, hbars, donut, lineChart, chartLegend, barPairs, ticketTable, ticketLink, bucketColor,
+    statusColor, priorityColor, typeColor, tagColor, nameColor };
 }
 
 function widgetHtml(widget, data, editing, index, total) {
+  const known = !!moduleById(dashboardState.listing.modules, widget.kind);
   const controls = editing ? `<button data-widget-move="-1" ${index === 0 ? "disabled" : ""} title="Move earlier" aria-label="Move earlier">&#8592;</button>
     <button data-widget-move="1" ${index === total - 1 ? "disabled" : ""} title="Move later" aria-label="Move later">&#8594;</button>
-    <button data-widget-edit title="Edit widget">Edit</button><button data-widget-remove class="danger" title="Remove widget">Remove</button>` : "";
-  return `<section class="widget span-${widget.size}" data-widget="${escapeHtml(widget.id)}"><header><h3>${escapeHtml(widget.title)}</h3>${controls}</header>${widgetBody(widget, data)}</section>`;
+    <button data-widget-edit title="Edit widget" ${known ? "" : "disabled"}>Edit</button><button data-widget-remove class="danger" title="Remove widget">Remove</button>` : "";
+  return `<section class="widget span-${widget.size}" data-widget="${escapeHtml(widget.id)}" data-module="${escapeHtml(widget.kind)}"><header><h3>${escapeHtml(widget.title)}</h3>${controls}</header>${widgetBody(widget, data, dashboardHelpers())}</section>`;
 }
 
-const dashboardState = { editing: false, loadedFor: null };
+const dashboardState = { editing: false, loadedFor: null, scriptsLoaded: new Set(), scriptFailures: [], listing: { folders: [], modules: [], failures: [] } };
+
+function loadScriptTag(url) {
+  return new Promise((resolve, reject) => {
+    const tag = document.createElement("script");
+    tag.src = url;
+    tag.onload = resolve;
+    tag.onerror = () => reject(new Error(`could not load ${url}`));
+    document.head.appendChild(tag);
+  });
+}
+
+async function loadModules() {
+  if (dashboardState.listingLoaded) return;
+  const listing = await guarded(() => api("GET", "/api/modules"));
+  if (!listing) return;
+  dashboardState.listing = listing;
+  dashboardState.listingLoaded = true;
+  const failed = await loadModuleScripts(listing.modules, loadScriptTag, dashboardState.scriptsLoaded);
+  dashboardState.scriptFailures = failed.length ? failed : dashboardState.scriptFailures.filter((item) => !dashboardState.scriptsLoaded.has(item.id));
+}
 
 async function loadDashboards() {
+  await loadModules();
   state.dashboards = (await guarded(() => api("GET", "/api/dashboards"))) || [];
   if (!state.dashboards.some((d) => d.id === state.dashboardId)) state.dashboardId = state.dashboards.length ? state.dashboards[0].id : null;
   state.dashboardData = null;
@@ -106,51 +67,23 @@ async function saveWidgets(widgets) {
   if (await guarded(() => api("PATCH", `/api/dashboards/${dashboard.id}`, { widgets }))) { await refresh(); }
 }
 
-function widgetFields(kind, values) {
-  const fields = [{ name: "title", label: "Title", kind: "text", placeholder: WIDGET_KINDS[kind] }];
-  fields.push({ name: "size", label: "Width", kind: "select", row: "a", options: [{ value: "1", label: "One column" }, { value: "2", label: "Two columns" }, { value: "3", label: "Three columns" }] });
-  if (kind === "group") {
-    fields.push({ name: "group_by", label: "Group by", kind: "select", row: "a", options: Object.entries(GROUP_LABELS).map(([value, label]) => ({ value, label })) });
-    fields.push({ name: "chart", label: "Chart", kind: "select", row: "a", options: [{ value: "bar", label: "Bars" }, { value: "donut", label: "Donut" }] });
-  }
-  if (kind === "count") {
-    fields.push({ name: "measure", label: "Measure", kind: "select", row: "b", options: [{ value: "total", label: "Tickets that exist" }, { value: "created", label: "Created in the period" }, { value: "closed", label: "Closed in the period" }] });
-    fields.push({ name: "days", label: "Period in days", kind: "number", min: 1, row: "b" });
-  }
-  if (kind === "trend") {
-    fields.push({ name: "days", label: "Days to show", kind: "number", min: 1, row: "b" });
-    fields.push({ name: "interval", label: "Step", kind: "select", row: "b", options: [{ value: "", label: "Automatic" }, { value: "day", label: "Day" }, { value: "week", label: "Week" }] });
-  }
-  if (kind === "cycle") fields.push({ name: "days", label: "Look back in days", kind: "number", min: 1 });
-  if (kind === "velocity") fields.push({ name: "days", label: "Iterations to show", kind: "number", min: 1, help: "Counts the most recent finished iterations" });
-  if (["workload", "overdue", "aging", "group"].includes(kind)) fields.push({ name: "limit", label: kind === "group" ? "Most common to show" : "Rows to show", kind: "number", min: 1 });
-  if (kind === "burndown") {
-    fields.push({ name: "iteration", label: "Iteration", kind: "select", options: [{ value: "", label: "The current one" }, ...state.iterationsAll.map((i) => ({ value: String(i.id), label: `${i.project} ${i.name}` }))] });
-  }
-  if (kind !== "burndown") {
-    fields.push({ group: "Which tickets" });
-    fields.push({ name: "f_project", label: "Project", kind: "select", row: "f1", options: [{ value: "", label: "All" }, ...state.projects.map((p) => ({ value: p.key, label: `${p.key} ${p.name}` }))] });
-    fields.push({ name: "f_area", label: "Area", kind: "select", row: "f1", options: [{ value: "", label: "All" }, ...state.areas.map((a) => ({ value: String(a.id), label: a.path }))] });
-    fields.push({ name: "f_type", label: "Type", kind: "select", row: "f2", options: [{ value: "", label: "Any" }, ...state.meta.types.map((v) => ({ value: v, label: v }))] });
-    fields.push({ name: "f_priority", label: "Priority", kind: "select", row: "f2", options: [{ value: "", label: "Any" }, ...state.meta.priorities.map((v) => ({ value: v, label: v }))] });
-    fields.push({ name: "f_assignee", label: "Assignee", kind: "text", row: "f3" });
-    fields.push({ name: "f_label", label: "Tag", kind: "text", row: "f3" });
-    fields.push({ name: "f_open", label: "Only open tickets", kind: "checkbox" });
-  }
-  return fields;
-}
-
-async function editWidget(existing, kind) {
+async function editWidget(existing, moduleId) {
+  const descriptor = moduleById(dashboardState.listing.modules, moduleId);
+  if (!descriptor) { toast(`The ${moduleId} module is not loaded`, true); return; }
   state.iterationsAll = (await guarded(() => api("GET", "/api/iterations"))) || [];
   const dashboard = currentDashboard();
   const isNew = !existing;
+  const choices = {
+    iterations: state.iterationsAll, projects: state.projects.map((p) => ({ value: p.key, label: `${p.key} ${p.name}` })),
+    areas: state.areas.map((a) => ({ value: String(a.id), label: a.path })),
+    types: state.meta.types.map((v) => ({ value: v, label: v })), priorities: state.meta.priorities.map((v) => ({ value: v, label: v })),
+  };
   openForm({
-    title: isNew ? `Add ${WIDGET_KINDS[kind].toLowerCase()} widget` : "Edit widget", fields: widgetFields(kind),
-    values: widgetValues(existing || { title: "", size: { trend: 2, burndown: 2, velocity: 2, cycle: 2 }[kind] || 1, group_by: "status", chart: "bar", measure: "total",
-      days: { count: 7, trend: 30, cycle: 30, velocity: 6 }[kind] || "", limit: 8, filters: {} }),
+    title: isNew ? `Add ${descriptor.title.toLowerCase()} widget` : "Edit widget", intro: descriptor.description || undefined, fields: moduleFormFields(descriptor, choices),
+    values: widgetValues(descriptor, existing || newWidgetDefaults(descriptor)),
     submitLabel: isNew ? "Add widget" : "Save widget",
     onSubmit: async (values) => {
-      const widget = widgetFromValues(kind, values, existing);
+      const widget = widgetFromValues(descriptor, values, existing);
       const widgets = isNew ? [...dashboard.widgets, widget] : dashboard.widgets.map((w) => (w.id === existing.id ? widget : w));
       const saved = await api("PATCH", `/api/dashboards/${dashboard.id}`, { widgets });
       state.dashboards = state.dashboards.map((d) => (d.id === saved.id ? saved : d));
@@ -160,10 +93,12 @@ async function editWidget(existing, kind) {
 }
 
 function chooseWidgetKind() {
+  const modules = dashboardState.listing.modules;
+  if (!modules.length) { toast("No dashboard modules are loaded", true); return; }
   openForm({
     title: "Add widget", intro: "Pick what the widget measures. You set the details next.",
-    fields: [{ name: "kind", label: "Widget", kind: "select", options: Object.entries(WIDGET_KINDS).map(([value, label]) => ({ value, label })) }],
-    values: { kind: "count" }, submitLabel: "Next",
+    fields: [{ name: "kind", label: "Widget", kind: "select", options: moduleChoices(modules) }],
+    values: { kind: modules[0].id }, submitLabel: "Next",
     onSubmit: async (values) => { setTimeout(() => editWidget(null, values.kind), 0); },
   });
 }
@@ -210,6 +145,13 @@ function wireDashboardActions() {
   });
 }
 
+function moduleProblemsHtml() {
+  const lines = [...moduleFailureLines(dashboardState.listing.failures), ...dashboardState.scriptFailures.map((item) => `${item.id}: ${item.error}`)];
+  if (!lines.length) return "";
+  return `<details class="module-problems"><summary>${lines.length} dashboard module${lines.length === 1 ? "" : "s"} could not be used</summary>
+    <ul>${lines.map((line) => `<li>${escapeHtml(line)}</li>`).join("")}</ul></details>`;
+}
+
 function renderDashboardsPage() {
   const dashboard = currentDashboard();
   if (!dashboard) {
@@ -222,6 +164,7 @@ function renderDashboardsPage() {
   const results = state.dashboardData ? state.dashboardData.results : {};
   const editing = dashboardState.editing;
   byId("main").innerHTML = `${dashboard.description ? `<p class="page-intro">${escapeHtml(dashboard.description)}</p>` : ""}
+    ${moduleProblemsHtml()}
     ${dashboard.widgets.length ? `<div class="dash-grid${editing ? " edit-mode" : ""}">${dashboard.widgets.map((w, i) => widgetHtml(w, results[w.id], editing, i, dashboard.widgets.length)).join("")}</div>`
       : `<div class="empty"><p>This dashboard has no widgets. Choose Edit dashboard, then Add widget.</p></div>`}`;
   byId("main").querySelectorAll("[data-open-ticket]").forEach((link) => link.addEventListener("click", () => openTicket(link.dataset.openTicket)));

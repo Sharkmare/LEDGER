@@ -148,3 +148,8 @@ dialog h3.group-title { margin: 14px 0 8px; font-family: var(--font-display); fo
   .widget.span-2, .widget.span-3 { grid-column: auto; }
   dialog .field-row { flex-direction: column; gap: 0; }
 }
+
+.module-problems { margin: 0 0 14px; padding: 8px 12px; border: 1px solid var(--priority-high); border-radius: 8px; font-size: 13px; }
+.module-problems summary { cursor: pointer; }
+.module-problems ul { margin: 8px 0 0; padding-left: 18px; color: var(--muted); }
+.widget-raw { margin: 0; max-height: 220px; overflow: auto; font-family: var(--font-mono); font-size: 12px; color: var(--muted); white-space: pre-wrap; }

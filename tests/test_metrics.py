@@ -6,7 +6,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from ledger import metrics, organise, people, server, store
+from ledger import dashmodules, metrics, organise, people, server, store
 
 DAY = 86400
 NOW = datetime.datetime(2026, 11, 5, 12, 0).timestamp()
@@ -17,12 +17,17 @@ def ago(days: float) -> float:
 
 
 def workspace():
+    dashmodules.activate(dashmodules.load([dashmodules.DEFAULT_FOLDER]))
     connection = store.connect(":memory:")
     store.create_project(connection, "APP", "App")
     store.create_project(connection, "WEB", "Web")
     for name in ("ann", "bob", *(f"person{number}" for number in range(5))):
         people.add(connection, name)
     return connection
+
+
+def measured(connection, kind, filters=None, **settings):
+    return metrics.evaluate(connection, {"kind": kind, "filters": filters or {}, **settings}, NOW)["data"]
 
 
 def make(connection, title="t", created=0, closed=None, project="APP", **fields):
@@ -49,26 +54,26 @@ class CountTests(unittest.TestCase):
         make(self.connection, created=3)
         make(self.connection, created=10, closed=1)
         make(self.connection, created=20, closed=9)
-        created = metrics.count_metric(self.connection, {}, "created", 7, NOW)
+        created = measured(self.connection, "count", {}, measure="created", days=7)
         self.assertEqual((created["value"], created["previous"], created["delta"]), (2, 1, 1))
-        closed = metrics.count_metric(self.connection, {}, "closed", 7, NOW)
+        closed = measured(self.connection, "count", {}, measure="closed", days=7)
         self.assertEqual((closed["value"], closed["previous"]), (1, 1))
 
     def test_total_counts_what_exists_now_against_what_existed_then(self):
         make(self.connection, created=2)
         make(self.connection, created=10, closed=3)
         make(self.connection, created=20)
-        total = metrics.count_metric(self.connection, {}, "total", 7, NOW)
+        total = measured(self.connection, "count", {}, measure="total", days=7)
         self.assertEqual((total["value"], total["previous"]), (3, 2))
-        open_now = metrics.count_metric(self.connection, {"open": True}, "total", 7, NOW)
+        open_now = measured(self.connection, "count", {"open": True}, measure="total", days=7)
         self.assertEqual((open_now["value"], open_now["previous"]), (2, 2))
 
     def test_filters_apply(self):
         make(self.connection, created=1, type="bug")
         make(self.connection, created=1, type="task")
         make(self.connection, created=1, project="WEB", type="bug")
-        self.assertEqual(metrics.count_metric(self.connection, {"type": "bug"}, "total", 7, NOW)["value"], 2)
-        self.assertEqual(metrics.count_metric(self.connection, {"type": "bug", "project": "APP"}, "total", 7, NOW)["value"], 1)
+        self.assertEqual(measured(self.connection, "count", {"type": "bug"}, measure="total", days=7)["value"], 2)
+        self.assertEqual(measured(self.connection, "count", {"type": "bug", "project": "APP"}, measure="total", days=7)["value"], 1)
 
 
 class GroupTests(unittest.TestCase):
@@ -79,7 +84,7 @@ class GroupTests(unittest.TestCase):
         make(self.connection, status="done", closed=1)
         make(self.connection, status="todo")
         make(self.connection, status="todo")
-        result = metrics.group_metric(self.connection, {}, "status")
+        result = measured(self.connection, "group", {}, group_by="status")
         self.assertEqual([(b["name"], b["value"]) for b in result["buckets"]], [("todo", 2), ("done", 1)])
         self.assertEqual(result["total"], 3)
 
@@ -89,15 +94,15 @@ class GroupTests(unittest.TestCase):
         make(connection, "one", project="APP")
         make(connection, "two", project="APP")
         make(connection, "three", project="WEB")
-        buckets = {bucket["key"]: bucket["value"] for bucket in metrics.group_metric(connection, {}, "project_tag")["buckets"]}
+        buckets = {bucket["key"]: bucket["value"] for bucket in measured(connection, "group", {}, group_by="project_tag")["buckets"]}
         self.assertEqual(buckets, {"resonite-research": 2, "games": 2, "": 1})
 
     def test_tags_are_unnested_and_unassigned_is_named(self):
         make(self.connection, labels="a,b", assignee="ann", estimate=3)
         make(self.connection, labels="a")
-        tags = {b["name"]: b["value"] for b in metrics.group_metric(self.connection, {}, "label")["buckets"]}
+        tags = {b["name"]: b["value"] for b in measured(self.connection, "group", {}, group_by="label")["buckets"]}
         self.assertEqual(tags, {"a": 2, "b": 1})
-        people = {b["name"]: (b["value"], b["points"]) for b in metrics.group_metric(self.connection, {}, "assignee")["buckets"]}
+        people = {b["name"]: (b["value"], b["points"]) for b in measured(self.connection, "group", {}, group_by="assignee")["buckets"]}
         self.assertEqual(people, {"ann": (1, 3.0), "unassigned": (1, 0.0)})
 
     def test_area_and_iteration_use_names_and_the_tail_is_folded_into_other(self):
@@ -105,13 +110,13 @@ class GroupTests(unittest.TestCase):
         sprint = organise.create_iteration(self.connection, "APP", "Sprint 1", "2026-11-02", "2026-11-13")
         make(self.connection, area="Platform", iteration=sprint["id"])
         make(self.connection)
-        areas = {b["name"] for b in metrics.group_metric(self.connection, {}, "area")["buckets"]}
+        areas = {b["name"] for b in measured(self.connection, "group", {}, group_by="area")["buckets"]}
         self.assertEqual(areas, {"Platform", "none"})
-        iterations = {b["name"] for b in metrics.group_metric(self.connection, {}, "iteration")["buckets"]}
+        iterations = {b["name"] for b in measured(self.connection, "group", {}, group_by="iteration")["buckets"]}
         self.assertEqual(iterations, {"Sprint 1", "none"})
         for number in range(5):
             make(self.connection, assignee=f"person{number}")
-        folded = metrics.group_metric(self.connection, {}, "assignee", limit=2)["buckets"]
+        folded = measured(self.connection, "group", {}, group_by="assignee", limit=2)["buckets"]
         self.assertEqual((len(folded), folded[-1]["name"]), (3, "other"))
 
 
@@ -123,7 +128,7 @@ class TrendTests(unittest.TestCase):
         make(self.connection, created=3, closed=1)
         make(self.connection, created=10)
         make(self.connection, created=2)
-        trend = metrics.trend_metric(self.connection, {}, 7, None, NOW)
+        trend = measured(self.connection, "trend", {}, days=7)
         series = trend["series"]
         self.assertEqual((len(series), series[0]["date"], series[-1]["date"]), (7, "2026-10-30", "2026-11-05"))
         by_date = {point["date"]: point for point in series}
@@ -133,7 +138,7 @@ class TrendTests(unittest.TestCase):
 
     def test_long_windows_switch_to_weeks(self):
         make(self.connection, created=5)
-        trend = metrics.trend_metric(self.connection, {}, 90, None, NOW)
+        trend = measured(self.connection, "trend", {}, days=90)
         self.assertEqual((trend["interval"], len(trend["series"])), ("week", 13))
         self.assertEqual(sum(point["created"] for point in trend["series"]), 1)
 
@@ -147,7 +152,7 @@ class BurndownTests(unittest.TestCase):
         make(self.connection, iteration=self.sprint["id"], estimate=3, created=5, closed=2)
         make(self.connection, iteration=self.sprint["id"], estimate=2, created=5)
         make(self.connection, iteration=self.sprint["id"], estimate=9, created=5, status="cancelled")
-        result = metrics.burndown_metric(self.connection, {"project": "APP"}, None, NOW)
+        result = measured(self.connection, "burndown", {"project": "APP"}, iteration=None)
         self.assertEqual((result["unit"], result["total"]), ("points", 5.0))
         self.assertEqual([day["remaining"] for day in result["days"]], [5.0, 2.0, 2.0, 2.0, None])
         self.assertEqual([day["ideal"] for day in result["days"]], [5.0, 3.75, 2.5, 1.25, 0.0])
@@ -155,14 +160,14 @@ class BurndownTests(unittest.TestCase):
     def test_without_estimates_it_counts_tickets(self):
         make(self.connection, iteration=self.sprint["id"], created=5, closed=1)
         make(self.connection, iteration=self.sprint["id"], created=5)
-        result = metrics.burndown_metric(self.connection, {}, self.sprint["id"], NOW)
+        result = measured(self.connection, "burndown", {}, iteration=self.sprint["id"])
         self.assertEqual((result["unit"], result["total"], result["days"][0]["remaining"], result["days"][-2]["remaining"]), ("tickets", 2, 2, 1))
 
     def test_the_active_iteration_is_preferred_and_none_is_an_error(self):
         organise.create_iteration(self.connection, "APP", "Sprint 0", "2026-10-01", "2026-10-14", state="done")
-        self.assertEqual(metrics.burndown_metric(self.connection, {"project": "APP"}, None, NOW)["iteration"]["name"], "Sprint 1")
+        self.assertEqual(measured(self.connection, "burndown", {"project": "APP"}, iteration=None)["iteration"]["name"], "Sprint 1")
         with self.assertRaises(store.NotFound):
-            metrics.burndown_metric(self.connection, {"project": "WEB"}, None, NOW)
+            measured(self.connection, "burndown", {"project": "WEB"}, iteration=None)
 
 
 class CycleTests(unittest.TestCase):
@@ -175,7 +180,7 @@ class CycleTests(unittest.TestCase):
         make(self.connection, created=12, closed=2)
         make(self.connection, created=9, closed=1, status="cancelled")
         make(self.connection, created=60, closed=40)
-        result = metrics.cycle_metric(self.connection, {}, 30, NOW)
+        result = measured(self.connection, "cycle", {}, days=30)
         self.assertEqual(result["closed"], 2)
         self.assertEqual((result["lead"]["average"], result["lead"]["median"]), (6.0, 6.0))
         self.assertEqual((result["cycle"]["average"], result["cycle"]["median"]), (1.0, 1.0))
@@ -183,7 +188,7 @@ class CycleTests(unittest.TestCase):
         self.assertEqual((counts["2 to 3 days"], counts["8 to 14 days"], counts["over 30 days"]), (1, 1, 0))
 
     def test_nothing_closed_gives_empty_figures(self):
-        result = metrics.cycle_metric(self.connection, {}, 30, NOW)
+        result = measured(self.connection, "cycle", {}, days=30)
         self.assertEqual((result["closed"], result["lead"]["average"], result["cycle"]["median"]), (0, None, None))
 
 
@@ -195,7 +200,7 @@ class AgingWorkloadTests(unittest.TestCase):
         for age in (3, 10, 20, 50, 90):
             make(self.connection, title=f"age {age}", created=age)
         make(self.connection, title="closed", created=100, closed=1)
-        result = metrics.aging_metric(self.connection, {}, 2, NOW)
+        result = measured(self.connection, "aging", {}, limit=2)
         self.assertEqual([bucket["value"] for bucket in result["buckets"]], [1, 1, 1, 1, 1])
         self.assertEqual(([item["title"] for item in result["oldest"]], result["total"]), (["age 90", "age 50"], 5))
 
@@ -205,7 +210,7 @@ class AgingWorkloadTests(unittest.TestCase):
         make(self.connection, assignee="bob")
         make(self.connection)
         make(self.connection, assignee="ann", closed=1)
-        result = metrics.workload_metric(self.connection, {}, 2, NOW)
+        result = measured(self.connection, "workload", {}, limit=2)
         self.assertEqual([(p["name"], p["tickets"], p["points"], p["overdue"]) for p in result["people"]], [("ann", 2, 3.0, 1), ("bob", 1, 0.0, 0)])
         self.assertEqual(result["more"], 1)
 
@@ -221,7 +226,7 @@ class VelocityOverdueTests(unittest.TestCase):
         make(self.connection, iteration=old["id"], estimate=5, closed=60)
         make(self.connection, iteration=old["id"], estimate=3)
         make(self.connection, iteration=recent["id"], estimate=8, closed=40)
-        result = metrics.velocity_metric(self.connection, {"project": "APP"})
+        result = measured(self.connection, "velocity", {"project": "APP"})
         self.assertEqual([(i["name"], i["committed"], i["completed"]) for i in result["iterations"]], [("Sprint 1", 8.0, 5.0), ("Sprint 2", 8.0, 8.0)])
         self.assertEqual(result["average"], 6.5)
 
@@ -231,7 +236,7 @@ class VelocityOverdueTests(unittest.TestCase):
         make(self.connection, title="tomorrow", due="2026-11-06")
         make(self.connection, title="finished late", due="2026-10-01", closed=1)
         make(self.connection, title="no date")
-        result = metrics.overdue_metric(self.connection, {}, 8, NOW)
+        result = measured(self.connection, "overdue", {}, limit=8)
         self.assertEqual((result["total"], [item["title"] for item in result["items"]]), (2, ["long ago", "yesterday"]))
         self.assertEqual(result["items"][0]["days_late"], 10)
 
