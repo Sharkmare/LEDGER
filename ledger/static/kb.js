@@ -364,17 +364,10 @@ function wireTree(container, space) {
 }
 
 async function moveInTree(flat, draggedId, target, where) {
-  const parent = where === "inside" ? target.id : target.parent_id;
-  const siblings = flat.filter((n) => n.parent_id === (parent || null) && n.id !== draggedId).sort((a, b) => a.position - b.position || a.id - b.id);
-  let index = siblings.length;
-  if (where !== "inside") index = siblings.findIndex((n) => n.id === target.id) + (where === "after" ? 1 : 0);
-  const ordered = [...siblings.slice(0, index), { id: draggedId }, ...siblings.slice(index)];
-  const dragged = await guarded(() => api("PATCH", `/api/kb/pages/${draggedId}`, { parent: parent || "", position: index + 1 }));
+  const plan = treeMovePlan(flat, draggedId, target, where);
+  const dragged = await guarded(() => api("PATCH", `/api/kb/pages/${draggedId}`, { parent: plan.parent, position: plan.position }));
   if (!dragged) return;
-  for (let i = 0; i < ordered.length; i += 1) {
-    const sibling = ordered[i];
-    if (sibling.id !== draggedId && sibling.position !== i + 1) await guarded(() => api("PATCH", `/api/kb/pages/${sibling.id}`, { position: i + 1 }));
-  }
+  for (const sibling of plan.renumber) await guarded(() => api("PATCH", `/api/kb/pages/${sibling.id}`, { position: sibling.position }));
   toast("Moved");
   refresh();
 }

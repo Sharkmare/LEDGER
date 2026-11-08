@@ -127,14 +127,8 @@ function projectForm(existing) {
   });
 }
 
-function descendantsOf(areaId) {
-  const found = [areaId];
-  for (const area of state.areas) if (found.includes(area.parent_id) && !found.includes(area.id)) found.push(area.id);
-  return state.areas.reduce((ids, area) => (ids.includes(area.id) ? ids : found.includes(area.parent_id) ? [...ids, area.id] : ids), found);
-}
-
 function areaForm(existing, parentId) {
-  const skip = existing ? descendantsOf(existing.id) : [];
+  const skip = existing ? descendantsOf(state.areas, existing.id) : [];
   openForm({
     title: existing ? `Edit area ${existing.name}` : "Create area",
     intro: existing ? "" : "An area groups related work, such as a product, a team or a subsystem. Boards live inside areas.",
