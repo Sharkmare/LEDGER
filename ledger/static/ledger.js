@@ -131,25 +131,12 @@ async function loadIcons() {
   } catch (_) { return; }
 }
 
-function currentFilters() {
-  return {
-    project: state.project,
-    assignee: state.nav === "mine" ? actorName() : state.filters.assignee,
-    status: state.nav === "blocked" ? "blocked" : state.filters.status,
-    questions: state.nav === "questions" ? "open" : "",
-    exclude_type: hiddenTypesParameter(state.hiddenTypes),
-    type: state.filters.type, priority: state.filters.priority, label: state.filters.label,
-    q: byId("searchBox").value.trim(), open: state.nav === "open" || state.filters.open ? "1" : "",
-  };
-}
-
 function drawerHasFocus() { return !byId("drawer").hidden && byId("drawer").contains(document.activeElement); }
 
 async function loadTicketsPage() {
   if (state.view === "plan") return loadPlan();
   if (state.view === "roadmap") return loadRoadmap();
-  const parameters = new URLSearchParams();
-  for (const [name, value] of Object.entries(currentFilters())) if (value) parameters.set(name, value);
+  const parameters = ticketQuery(ticketFilters({ project: state.project, nav: state.nav, filters: state.filters, hiddenTypes: state.hiddenTypes, actor: actorName(), search: byId("searchBox").value }));
   const listed = await guarded(() => request("GET", "/api/tickets?" + parameters));
   if (listed) { state.tickets = listed.result; state.total = listed.total; }
   if (state.nav === "queue" && !state.project) { state.tickets = queueState.tickets; state.total = queueState.count; }
