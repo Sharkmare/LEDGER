@@ -315,13 +315,6 @@ function openCount(project) {
   return Object.entries(project.counts).filter(([status]) => !state.meta.closed_statuses.includes(status)).reduce((sum, [, count]) => sum + count, 0);
 }
 
-function tagGroups(projects) {
-  if (!projects.some((p) => (p.tags || []).length)) return [{ tag: "", projects }];
-  const groups = new Map();
-  projects.forEach((p) => (p.tags && p.tags.length ? p.tags : ["untagged"]).forEach((tag) => groups.set(tag, [...(groups.get(tag) || []), p])));
-  return [...groups.keys()].sort((a, b) => (a === "untagged") - (b === "untagged") || a.localeCompare(b)).map((tag) => ({ tag, projects: groups.get(tag) }));
-}
-
 function sectionCollapsed(name) { return state.collapsedSections.includes(name); }
 
 function navItemHtml({ id, label, iconName, tile, count, active, href, kind, indent = 0, twisty }) {
