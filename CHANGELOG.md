@@ -2,6 +2,32 @@
 
 Generated from commit subjects by `tools/changelog.py` when a release is cut. Do not edit it by hand: a subject's first word picks its heading (see CONTRIBUTING.md).
 
+## 1.4.0 (2026-11-08)
+
+### Added
+
+- Add dashboard modules loaded from a modules folder at launch (`36ae8f7`)
+
+### Changed
+
+- Move tagGroups into its own module and test it under Node (`23721f1`)
+- Move the sidebar section builder into its own module and test it (`48e5a1b`)
+- Move the widget form converters into their own module and test them (`ca10e1d`)
+- Move the roadmap layout math into its own module and test it (`7e3c594`)
+- Move the editor list and format rules into their own tested module (`e58dbc6`)
+- Share one tested HTML escape function across the pages (`03ad5a6`)
+- Move the summary counts, filter choices and name colours into modules (`453abfd`)
+- Move the relative time wording and wiki link matching into modules (`64bc61f`)
+- Load the shared escape in Node without a second name for it (`2df0189`)
+- Move the dashboard chart drawing into its own module and test it (`482c372`)
+- Move page tree reordering and area descendants into a tested module (`0074b25`)
+- Find area descendants whatever order the areas arrive in (`8cad28c`)
+- Move the API reference schema helpers into a tested module (`72a180b`)
+- Move the ticket list filter building into its own tested module (`65a21ac`)
+- Move the administration form markup into its own tested module (`6ef1c98`)
+- Move the knowledge base page helpers into their own tested module (`b4231f0`)
+- Move the board rule chips and progress bar into a tested module (`f0a4398`)
+
 ## 1.3.0 (2026-11-07)
 
 ### Added

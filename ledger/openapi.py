@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from . import bulk, dashmodules, kb, people_spec, questions, store, usersettings
 
-API_VERSION = "1.3.0"
+API_VERSION = "1.4.0"
 KEY_EXAMPLE = "APP-1"
 
 
