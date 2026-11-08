@@ -660,55 +660,22 @@ function handleEditorKeys(event, body, save, cancel, fromTitle = false) {
   if (event.key === "Enter") continueList(event, body);
 }
 
+function applyEdit(body, edit) {
+  body.setSelectionRange(edit.from, edit.to);
+  document.execCommand("insertText", false, edit.text);
+  if (edit.caretStart !== undefined) body.setSelectionRange(edit.caretStart, edit.caretEnd);
+}
+
 function continueList(event, body) {
-  const start = body.selectionStart;
-  const lineStart = body.value.lastIndexOf("\n", start - 1) + 1;
-  const line = body.value.slice(lineStart, start);
-  const match = line.match(/^(\s*)([-*+]|\d+\.)\s(\[[ x]\]\s)?/);
-  if (!match || start !== body.selectionEnd) return;
+  const edit = listContinuation(body.value, body.selectionStart, body.selectionEnd);
+  if (!edit) return;
   event.preventDefault();
-  if (line.trim() === match[0].trim()) { body.setSelectionRange(lineStart, start); document.execCommand("delete"); document.execCommand("insertText", false, "\n"); return; }
-  const marker = /\d/.test(match[2]) ? `${parseInt(match[2], 10) + 1}.` : match[2];
-  document.execCommand("insertText", false, `\n${match[1]}${marker} ${match[3] ? "[ ] " : ""}`);
+  applyEdit(body, edit);
 }
 
 function applyFormat(body, kind) {
-  const { selectionStart: start, selectionEnd: end, value } = body;
-  const selected = value.slice(start, end);
-  const lineStart = value.lastIndexOf("\n", start - 1) + 1;
-  const replace = (from, to, text, caretStart, caretEnd) => {
-    body.setSelectionRange(from, to);
-    document.execCommand("insertText", false, text);
-    body.setSelectionRange(caretStart, caretEnd);
-  };
-  const wrap = (mark, placeholder) => {
-    const text = selected || placeholder;
-    replace(start, end, `${mark}${text}${mark}`, start + mark.length, start + mark.length + text.length);
-  };
-  const prefix = (mark) => {
-    const lines = value.slice(lineStart, end).split("\n");
-    const out = lines.map((line, i) => (mark === "1. " ? `${i + 1}. ` : mark) + line.replace(/^(#{1,6}\s+|[-*+]\s+(\[[ x]\]\s+)?|\d+\.\s+|>\s?)/, "")).join("\n");
-    replace(lineStart, end, out, lineStart, lineStart + out.length);
-  };
-  const insert = (text, caret) => replace(start, end, text, start + caret, start + caret);
-  if (kind === "bold") wrap("**", "bold text");
-  else if (kind === "italic") wrap("*", "italic text");
-  else if (kind === "code") wrap("`", "code");
-  else if (kind === "h2") prefix("## ");
-  else if (kind === "h3") prefix("### ");
-  else if (kind === "ul") prefix("- ");
-  else if (kind === "ol") prefix("1. ");
-  else if (kind === "task") prefix("- [ ] ");
-  else if (kind === "quote") prefix("> ");
-  else if (kind === "link") {
-    const isUrl = /^https?:\/\//.test(selected);
-    const text = isUrl ? "link text" : selected || "link text";
-    const url = isUrl ? selected : "https://";
-    replace(start, end, `[${text}](${url})`, isUrl ? start + 1 : start + text.length + 3, isUrl ? start + 1 + text.length : start + text.length + 3 + url.length);
-  } else if (kind === "table") insert("\n| Column | Column |\n|---|---|\n|  |  |\n", 3);
-  else if (kind === "fence") insert("\n```\n" + selected + "\n```\n", 5);
-  else if (kind === "callout") insert("\n> [!NOTE]\n> " + (selected || "Something worth noticing."), 12);
-  else if (kind === "wiki") { const text = selected || "Page title"; replace(start, end, `[[${text}]]`, start + 2, start + 2 + text.length); }
+  const edit = formatEdit(body.value, body.selectionStart, body.selectionEnd, kind);
+  if (edit) applyEdit(body, edit);
 }
 
 function suggestWikiLinks(body) {
