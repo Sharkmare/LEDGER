@@ -2,8 +2,14 @@
 
 function descendantsOf(areas, areaId) {
   const found = [areaId];
-  for (const area of areas) if (found.includes(area.parent_id) && !found.includes(area.id)) found.push(area.id);
-  return areas.reduce((ids, area) => (ids.includes(area.id) ? ids : found.includes(area.parent_id) ? [...ids, area.id] : ids), found);
+  let grew = true;
+  while (grew) {
+    grew = false;
+    for (const area of areas) {
+      if (found.includes(area.parent_id) && !found.includes(area.id)) { found.push(area.id); grew = true; }
+    }
+  }
+  return found;
 }
 
 function treeMovePlan(flat, draggedId, target, where) {

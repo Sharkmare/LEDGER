@@ -66,6 +66,15 @@ check("a page's descendants include itself first and every page below it", () =>
   assert.deepStrictEqual(sorted(descendantsOf(tree, 2)), [2, 3]);
 });
 
+check("descendants are found however deep the tree and whatever order the areas arrive in", () => {
+  const reversed = [area(5, 4), area(4, 3), area(3, 2), area(2, 1), area(1, null), area(9, null)];
+  assert.deepStrictEqual([...descendantsOf(reversed, 1)].sort((a, b) => a - b), [1, 2, 3, 4, 5]);
+});
+
+check("a loop in the data ends instead of running forever", () => {
+  assert.deepStrictEqual([...descendantsOf([area(1, 2), area(2, 1)], 1)].sort(), [1, 2]);
+});
+
 check("an area with nothing below it has only itself", () => {
   assert.deepStrictEqual(descendantsOf([area(1, null), area(2, 1)], 2), [2]);
 });
