@@ -3,25 +3,6 @@
 const ITERATION_COLORS = { planned: "var(--status-todo)", active: "var(--status-in_progress)", done: "var(--status-done)" };
 const ROADMAP_LABEL_WIDTH = 190;
 
-function ruleChips(rules) {
-  const chips = [];
-  const chip = (text) => chips.push(`<span class="chip">${escapeHtml(text)}</span>`);
-  if (rules.scope === "all") chip("any area");
-  if (rules.project) chip(`project ${rules.project}`);
-  if (rules.types) chip(`types ${rules.types.join(", ")}`);
-  if (rules.priorities) chip(`priority ${rules.priorities.join(", ")}`);
-  (rules.labels || []).forEach((label) => chips.push(`<span class="chip tint" style="--tint:${tagColor(label)}">${escapeHtml(label)}</span>`));
-  if (rules.assignee) chip(`@${rules.assignee}`);
-  if (rules.parent) chip(`under ${rules.parent}`);
-  if (rules.iteration) chip(`iteration ${rules.iteration}`);
-  return chips.length ? chips.join("") : `<span class="muted">Everything in the area</span>`;
-}
-
-function progressBar(done, total) {
-  const percent = total ? Math.round((done / total) * 100) : 0;
-  return `<div class="progress" role="progressbar" aria-valuenow="${percent}" aria-valuemin="0" aria-valuemax="100"><span style="width:${percent}%"></span></div>`;
-}
-
 function nameOfArea(areaId) {
   const area = state.areas.find((a) => a.id === areaId);
   return area ? area.path : "";
@@ -54,7 +35,7 @@ function renderAreaPage() {
     <div class="section-title">Boards <span class="grow"></span></div>
     ${boards.length ? `<div class="cards-grid">${boards.map((board) => `<div class="panel-card clickable" tabindex="0" role="button" data-board="${board.id}">
         <h3>${escapeHtml(board.name)}</h3>${board.description ? `<div class="muted">${escapeHtml(board.description)}</div>` : ""}
-        <div class="rule-row">${ruleChips(board.rules)}</div>
+        <div class="rule-row">${ruleChips(board.rules, tagColor)}</div>
         <div class="facts"><span>${board.tickets} tickets</span><span>${board.pinned} pinned</span><span>${board.statuses.length} columns</span></div></div>`).join("")}</div>`
       : `<div class="empty-line">No boards yet. A board shows the tickets of this area that match its rules, plus anything you pin to it.</div>`}
     ${children.length ? `<div class="section-title">Sub-areas</div><div class="cards-grid">${children.map((child) => `<div class="panel-card clickable" tabindex="0" role="button" data-area="${child.id}">

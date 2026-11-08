@@ -313,7 +313,7 @@ function renderManageTab() {
   }
   if (tab === "boards") {
     return `<div class="toolbar"><span class="grow"></span><button class="primary" data-act="board-new">New board</button></div>${table([
-      { label: "Area", render: (b) => escapeHtml(b.area) }, { label: "Board", render: (b) => escapeHtml(b.name) }, { label: "Rules", render: (b) => `<div class="rule-row">${ruleChips(b.rules)}</div>` },
+      { label: "Area", render: (b) => escapeHtml(b.area) }, { label: "Board", render: (b) => escapeHtml(b.name) }, { label: "Rules", render: (b) => `<div class="rule-row">${ruleChips(b.rules, tagColor)}</div>` },
       { label: "Tickets", cls: "num", render: (b) => b.tickets }, { label: "Pinned", cls: "num", render: (b) => b.pinned },
       { label: "", cls: "actions", render: (b) => `${rowButton("board-open", b.id, "Open")}${rowButton("board-edit", b.id)}` },
     ], data.boards || [], "No boards yet. Create an area first, then a board inside it.")}`;
